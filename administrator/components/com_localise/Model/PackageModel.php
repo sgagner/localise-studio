@@ -16,9 +16,9 @@ use Joomla\CMS\Access\Rules as JAccessRules;
 use Joomla\CMS\Client\ClientHelper;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
-use Joomla\CMS\Filesystem\File;
-use Joomla\CMS\Filesystem\Folder;
-use Joomla\CMS\Filesystem\Path;
+use Joomla\Filesystem\File;
+use Joomla\Filesystem\Folder;
+use Joomla\Filesystem\Path;
 use Joomla\CMS\Form\Form;
 use Joomla\CMS\Form\FormField;
 use Joomla\CMS\Language\Text;
@@ -38,6 +38,7 @@ use Joomla\CMS\Object\CMSObject;
  */
 class PackageModel extends AdminModel
 {
+	public const CORE_ARCHIVE_NAME = '{language}_joomla_lang_full_{version}v{revision}.zip';
 	/**
 	 * Method to auto-populate the model state.
 	 *
@@ -59,7 +60,7 @@ class PackageModel extends AdminModel
 		$name = $app->getUserState('com_localise.package.name');
 		$this->setState('package.name', $name);
 
-		$id = $app->getUserState('com_localise.edit.package.id');
+		$id = $app->input->getInt('id', 0);
 		$this->setState('package.id', $id);
 	}
 
@@ -125,7 +126,7 @@ class PackageModel extends AdminModel
 		$data = $app->getUserState('com_localise.edit.package.data', array());
 
 		// Get the package data.
-		if (empty($data))
+		if (empty($data) || (int) ($data['id'] ?? 0) !== (int) $this->getState('package.id'))
 		{
 			$data = $this->getItem();
 		}
@@ -178,6 +179,7 @@ class PackageModel extends AdminModel
 		$package = new CMSObject;
 		$package->checked_out = 0;
 		$package->standalone  = true;
+		$package->core        = true;
 		$package->manifest    = null;
 		$package->title       = null;
 		$package->description = null;
@@ -198,7 +200,7 @@ class PackageModel extends AdminModel
 			$package->setProperties($table->getProperties());
 
 			// Get the manifest
-			$xml = simplexml_load_file($table->path);
+			$xml = LocaliseHelper::loadPackageDefinition($table->path);
 
 			if ($xml)
 			{
@@ -363,11 +365,8 @@ class PackageModel extends AdminModel
 	{
 		// When editing a package, find the original path
 		$app        = Factory::getApplication('administrator');
-		$originalId = $app->getUserState('com_localise.edit.package.id');
+		$originalId = (int) $this->getState('package.id');
 		$oldpath    = null;
-
-		$originalId = is_array($originalId) && count($originalId) > 0 ?
-						$originalId[0] : $originalId;
 
 		if (!empty($originalId))
 		{
@@ -403,7 +402,8 @@ class PackageModel extends AdminModel
 
 			// Add main package information
 			$titleElement = $dom->createElement('title', $title);
-			$descriptionElement = $dom->createElement('description', $description);
+			$descriptionElement = $dom->createElement('description');
+			$descriptionElement->appendChild($dom->createTextNode($description));
 			$manifestElement = $dom->createElement('manifest', $manifest);
 			$versionElement = $dom->createElement('version', $data['version']);
 			$packversionElement = $dom->createElement('packversion', $data['packversion']);
@@ -509,7 +509,7 @@ class PackageModel extends AdminModel
 			$ftp = ClientHelper::getCredentials('ftp');
 
 			// Try to make the file writeable.
-			if (File::exists($path) && !$ftp['enabled'] && Path::isOwner($path) && !Path::setPermissions($path, '0644'))
+			if (is_file($path) && !$ftp['enabled'] && Path::isOwner($path) && !Path::setPermissions($path, '0644'))
 			{
 				$this->setError(Text::sprintf('COM_LOCALISE_ERROR_PACKAGE_WRITABLE', $path));
 
@@ -641,7 +641,7 @@ class PackageModel extends AdminModel
 		}
 
 		// Delete the older file and redirect
-		if ($path !== $oldpath && file_exists($oldpath))
+		if ($oldpath !== null && $path !== $oldpath && is_file($oldpath))
 		{
 			if (!File::delete($oldpath))
 			{
@@ -687,6 +687,43 @@ class PackageModel extends AdminModel
 			return false;
 		}
 
+		$customFilename = ($data['custom_archive'] ?? '') === '1';
+		$filename = $data['archive_filename'] ?? '';
+		$error = null;
+
+		if (!preg_match('/^[0-9]+\.[0-9]+\.[0-9]+$/D', $data['version'] ?? '')
+			|| !preg_match('/^[0-9]+$/D', $data['packversion'] ?? ''))
+		{
+			$error = 'COM_LOCALISE_PACKAGE_VERSION_INVALID';
+		}
+		elseif ($customFilename && (!is_string($filename)
+			|| !preg_match('/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,249}\.zip$/D', $filename)))
+		{
+			$error = 'COM_LOCALISE_CUSTOM_ARCHIVE_INVALID';
+		}
+
+		if ($error !== null)
+		{
+			$language = $app->getLanguage();
+			$language->load('com_localise_picker', JPATH_COMPONENT_ADMINISTRATOR);
+			$app->enqueueMessage(Text::_($error), 'warning');
+			$id = $app->input->getInt('id', 0);
+			$data['id'] = $id;
+			$app->setUserState('com_localise.edit.package.data', $data);
+			$app->redirect(Route::_('index.php?option=com_localise&view=package&layout=edit&id=' . $id, false));
+
+			return false;
+		}
+
+		if (!$customFilename)
+		{
+			$filename = strtr(self::CORE_ARCHIVE_NAME, [
+				'{language}' => $data['language'],
+				'{version}' => $data['version'],
+				'{revision}' => $data['packversion'],
+			]);
+		}
+
 		// Necessary variables if localise.php is not present in target language
 		$params			= ComponentHelper::getParams('com_localise');
 		$reftag			= $params->get('reference');
@@ -723,7 +760,7 @@ class PackageModel extends AdminModel
 
 		foreach ($folders as $folder)
 		{
-			if (Folder::exists(JPATH_ROOT . $folder) && !Folder::delete(JPATH_ROOT . $folder))
+			if (is_dir(JPATH_ROOT . $folder) && !Folder::delete(JPATH_ROOT . $folder))
 			{
 				// Folder::delete throws an error
 				$this->setError(Text::_('COM_LOCALISE_ERROR_EXPORT_ZIPDELETE'));
@@ -750,23 +787,28 @@ class PackageModel extends AdminModel
 
 		$dataBlockUninstall = $data['blockuninstall'] === '1' ? 'true' : 'false';
 
+		$escapeXml = static function ($value) {
+			return htmlspecialchars((string) $value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+		};
+
 		// Prepare text to save for the xml package description
 		$text = '';
 		$text .= '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 		$text .= '<extension type="package" method="upgrade">' . "\n";
-		$text .= "\t" . '<name>' . $data['name'] . '</name>' . "\n";
+		$text .= "\t" . '<name>' . $escapeXml($data['name']) . '</name>' . "\n";
 		$text .= "\t" . '<packagename>' . $data['language'] . '</packagename>' . "\n";
 		$text .= "\t" . '<version>' . $data['version'] . '.' . $data['packversion'] . '</version>' . "\n";
 		$text .= "\t" . '<creationDate>' . date('Y-m-d') . '</creationDate>' . "\n";
-		$text .= "\t" . '<author>' . $data['author'] . '</author>' . "\n";
-		$text .= "\t" . '<authorEmail>' . $data['authoremail'] . '</authorEmail>' . "\n";
-		$text .= "\t" . '<authorUrl>' . $data['authorurl'] . '</authorUrl>' . "\n";
-		$text .= "\t" . '<copyright>' . $data['copyright'] . '</copyright>' . "\n";
-		$text .= "\t" . '<license>' . $data['license'] . '</license>' . "\n";
-		$text .= "\t" . '<url>' . $data['url'] . '</url>' . "\n";
-		$text .= "\t" . '<packager>' . $data['packager'] . '</packager>' . "\n";
-		$text .= "\t" . '<packagerurl>' . $data['packagerurl'] . '</packagerurl>' . "\n";
-		$text .= "\t" . '<description><![CDATA[' . $data['description'] . ']]></description>' . "\n";
+		$text .= "\t" . '<author>' . $escapeXml($data['author']) . '</author>' . "\n";
+		$text .= "\t" . '<authorEmail>' . $escapeXml($data['authoremail']) . '</authorEmail>' . "\n";
+		$text .= "\t" . '<authorUrl>' . $escapeXml($data['authorurl']) . '</authorUrl>' . "\n";
+		$text .= "\t" . '<copyright>' . $escapeXml($data['copyright']) . '</copyright>' . "\n";
+		$text .= "\t" . '<license>' . $escapeXml($data['license']) . '</license>' . "\n";
+		$text .= "\t" . '<url>' . $escapeXml($data['url']) . '</url>' . "\n";
+		$text .= "\t" . '<packager>' . $escapeXml($data['packager']) . '</packager>' . "\n";
+		$text .= "\t" . '<packagerurl>' . $escapeXml($data['packagerurl']) . '</packagerurl>' . "\n";
+		$description = str_replace(']]>', ']]]]><![CDATA[>', $data['description'] ?? '');
+		$text .= "\t" . '<description><![CDATA[' . $description . ']]></description>' . "\n";
 		$text .= "\t" . '<blockChildUninstall>' . $dataBlockUninstall . '</blockChildUninstall>' . "\n";
 		$text .= "\t" . '<files>' . "\n";
 
@@ -776,7 +818,7 @@ class PackageModel extends AdminModel
 
 			$path = JPATH_ROOT . '/language/' . $data['language'] . '/langmetadata.xml';
 
-			if (File::exists($path))
+			if (is_file($path))
 			{
 				$xmldata = file_get_contents($path);
 
@@ -788,7 +830,7 @@ class PackageModel extends AdminModel
 				}
 			}
 
-			if (!File::exists($path) || empty($xmldata))
+			if (!is_file($path) || empty($xmldata))
 			{
 				$app->enqueueMessage(Text::sprintf('COM_LOCALISE_ERROR_NO_XML', Text::_('JSITE'), 'langmetadata.xml', 'error'));
 				$app->redirect(Route::_('index.php?option=com_localise&view=package&layout=edit&id=' . $this->getState('package.id'), false));
@@ -801,15 +843,15 @@ class PackageModel extends AdminModel
 
 			$site_txt = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 			$site_txt .= '<extension client="site" type="language" method="upgrade">' . "\n";
-			$site_txt .= "\t" . '<name>' . $installName . '</name>' . "\n";
+			$site_txt .= "\t" . '<name>' . $escapeXml($installName) . '</name>' . "\n";
 			$site_txt .= "\t" . '<tag>' . $data['language'] . '</tag>' . "\n";
 			$site_txt .= "\t" . '<version>' . $data['version'] . '.' . $data['packversion'] . '</version>' . "\n";
 			$site_txt .= "\t" . '<creationDate>' . date('Y-m-d') . '</creationDate>' . "\n";
-			$site_txt .= "\t" . '<author>' . $data['author'] . '</author>' . "\n";
-			$site_txt .= "\t" . '<authorEmail>' . $data['authoremail'] . '</authorEmail>' . "\n";
-			$site_txt .= "\t" . '<authorUrl>' . $data['authorurl'] . '</authorUrl>' . "\n";
-			$site_txt .= "\t" . '<copyright>' . $data['copyright'] . '</copyright>' . "\n";
-			$site_txt .= "\t" . '<license>' . $data['license'] . '</license>' . "\n";
+			$site_txt .= "\t" . '<author>' . $escapeXml($data['author']) . '</author>' . "\n";
+			$site_txt .= "\t" . '<authorEmail>' . $escapeXml($data['authoremail']) . '</authorEmail>' . "\n";
+			$site_txt .= "\t" . '<authorUrl>' . $escapeXml($data['authorurl']) . '</authorUrl>' . "\n";
+			$site_txt .= "\t" . '<copyright>' . $escapeXml($data['copyright']) . '</copyright>' . "\n";
+			$site_txt .= "\t" . '<license>' . $escapeXml($data['license']) . '</license>' . "\n";
 			$site_txt .= "\t" . '<description>' . $data['language'] . ' - Site language</description>' . "\n";
 			$site_txt .= "\t" . '<files>' . "\n";
 			$site_txt .= "\t\t" . '<folder>/</folder>' . "\n";
@@ -817,12 +859,12 @@ class PackageModel extends AdminModel
 			// As this is a core package, the main joomla file joomla.ini should be in the package
 			$path = JPATH_ROOT . '/language/' . $data['language'] . '/joomla.ini';
 
-			if (File::exists($path))
+			if (is_file($path))
 			{
 				$file_data = file_get_contents($path);
 			}
 
-			if (File::exists($path) && !empty($file_data))
+			if (is_file($path) && !empty($file_data))
 			{
 				$site = array_diff($site, array("joomla"));
 				$site_package_files[] = array('name' => 'joomla.ini','data' => $file_data);
@@ -836,12 +878,12 @@ class PackageModel extends AdminModel
 			{
 				$path = JPATH_ROOT . '/language/' . $data['language'] . '/' . $translation . '.ini';
 
-				if (File::exists($path))
+				if (is_file($path))
 				{
 					$file_data = file_get_contents($path);
 				}
 
-				if (File::exists($path) && !empty($file_data))
+				if (is_file($path) && !empty($file_data))
 				{
 					$site_package_files[] = array('name' => $translation . '.ini', 'data' => $file_data);
 				}
@@ -853,13 +895,13 @@ class PackageModel extends AdminModel
 
 			$path = JPATH_ROOT . '/language/' . $data['language'] . '/localise.php';
 
-			if (File::exists($path))
+			if (is_file($path))
 			{
 				$language_data = file_get_contents($path);
 			}
 
 			// Create a basic localise.php if not present in target language
-			elseif (!File::exists($path) || empty($languagedata))
+			elseif (!is_file($path) || empty($languagedata))
 			{
 				$language_data = file_get_contents(JPATH_ROOT . '/language/' . $reftag . '/localise.php');
 				$language_data = str_replace($reftag, $data['language'], $language_data);
@@ -871,7 +913,7 @@ class PackageModel extends AdminModel
             // The translations will use this file to add the common words and is started if not present when the translated language pack is created.
 			$path = JPATH_ROOT . '/language/' . $data['language'] . '/com_finder.commonwords.txt';
 
-			if (File::exists($path))
+			if (is_file($path))
 			{
 				$language_data = file_get_contents($path);
 
@@ -891,19 +933,19 @@ class PackageModel extends AdminModel
 			$site_txt .= "\t" . '</files>' . "\n";
 
 			// Check if language has a custom calendar. The folder xx-XX should be present in the media folder
-			if (Folder::exists(JPATH_ROOT . '/media/' . $data['language']))
+			if (is_dir(JPATH_ROOT . '/media/' . $data['language']))
 			{
 				$site_txt .= "\n";
 				$site_txt .= "\t" . '<media destination="' . $data['language'] . '">' . "\n";
 				$site_txt .= "\t\t" . '<filename>index.html</filename>' . "\n";
 				$path = JPATH_ROOT . '/media/' . $data['language'] . '/js/calendar-setup.js';
 
-				if (File::exists($path))
+				if (is_file($path))
 				{
 					$file_data = file_get_contents($path);
 				}
 
-				if (File::exists($path) && !empty($file_data))
+				if (is_file($path) && !empty($file_data))
 				{
 					$site_package_files[] = array('name' => 'js/calendar-setup.js','data' => $file_data);
 					$site_txt .= "\t\t" . '<filename>js/calendar-setup.js</filename>' . "\n";
@@ -911,12 +953,12 @@ class PackageModel extends AdminModel
 
 				$path = JPATH_ROOT . '/media/' . $data['language'] . '/js/calendar-setup-uncompressed.js';
 
-				if (File::exists($path))
+				if (is_file($path))
 				{
 					$file_data = file_get_contents($path);
 				}
 
-				if (File::exists($path) && !empty($file_data))
+				if (is_file($path) && !empty($file_data))
 				{
 					$site_package_files[] = array('name' => 'js/calendar-setup-uncompressed.js','data' => $file_data);
 					$site_txt .= "\t\t" . '<filename>js/calendar-setup-uncompressed</filename>' . "\n";
@@ -924,12 +966,12 @@ class PackageModel extends AdminModel
 
 				$path = JPATH_ROOT . '/media/' . $data['language'] . '/js/index.html';
 
-				if (File::exists($path))
+				if (is_file($path))
 				{
 					$file_data = file_get_contents($path);
 				}
 
-				if (File::exists($path) && !empty($file_data))
+				if (is_file($path) && !empty($file_data))
 				{
 					$site_package_files[] = array('name' => 'js/index.html','data' => $file_data);
 					$site_txt .= "\t\t" . '<filename>js/index.html</filename>' . "\n";
@@ -937,12 +979,12 @@ class PackageModel extends AdminModel
 
 				$path = JPATH_ROOT . '/media/' . $data['language'] . '/js/calendar.js';
 
-				if (File::exists($path))
+				if (is_file($path))
 				{
 					$file_data = file_get_contents($path);
 				}
 
-				if (File::exists($path) && !empty($file_data))
+				if (is_file($path) && !empty($file_data))
 				{
 					$site_package_files[] = array('name' => 'js/calendar.js','data' => $file_data);
 					$site_txt .= "\t\t" . '<filename>js/calendar.js</filename>' . "\n";
@@ -950,12 +992,12 @@ class PackageModel extends AdminModel
 
 				$path = JPATH_ROOT . '/media/' . $data['language'] . '/js/calendar-uncompressed.js';
 
-				if (File::exists($path))
+				if (is_file($path))
 				{
 					$file_data = file_get_contents($path);
 				}
 
-				if (File::exists($path) && !empty($file_data))
+				if (is_file($path) && !empty($file_data))
 				{
 					$site_package_files[] = array('name' => 'js/calendar-uncompressed.js','data' => $file_data);
 					$site_txt .= "\t\t" . '<filename>js/calendar-uncompressed.js</filename>' . "\n";
@@ -987,12 +1029,12 @@ class PackageModel extends AdminModel
 
 			$path = JPATH_ROOT . '/administrator/language/' . $data['language'] . '/langmetadata.xml';
 
-			if (File::exists($path))
+			if (is_file($path))
 			{
 				$xmldata = file_get_contents($path);
 			}
 
-			if (!File::exists($path) || empty($xmldata))
+			if (!is_file($path) || empty($xmldata))
 			{
 				$app->enqueueMessage(Text::sprintf('COM_LOCALISE_ERROR_NO_XML', Text::_('JADMINISTRATOR'), 'langmetadata.xml', 'error'));
 				$app->redirect(Route::_('index.php?option=com_localise&view=package&layout=edit&id=' . $this->getState('package.id'), false));
@@ -1005,15 +1047,15 @@ class PackageModel extends AdminModel
 
 			$admin_txt = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 			$admin_txt .= '<extension client="administrator" type="language" method="upgrade">' . "\n";
-			$admin_txt .= "\t" . '<name>' . $installName . '</name>' . "\n";
+			$admin_txt .= "\t" . '<name>' . $escapeXml($installName) . '</name>' . "\n";
 			$admin_txt .= "\t" . '<tag>' . $data['language'] . '</tag>' . "\n";
 			$admin_txt .= "\t" . '<version>' . $data['version'] . '.' . $data['packversion'] . '</version>' . "\n";
 			$admin_txt .= "\t" . '<creationDate>' . date('Y-m-d') . '</creationDate>' . "\n";
-			$admin_txt .= "\t" . '<author>' . $data['author'] . '</author>' . "\n";
-			$admin_txt .= "\t" . '<authorEmail>' . $data['authoremail'] . '</authorEmail>' . "\n";
-			$admin_txt .= "\t" . '<authorUrl>' . $data['authorurl'] . '</authorUrl>' . "\n";
-			$admin_txt .= "\t" . '<copyright>' . $data['copyright'] . '</copyright>' . "\n";
-			$admin_txt .= "\t" . '<license>' . $data['license'] . '</license>' . "\n";
+			$admin_txt .= "\t" . '<author>' . $escapeXml($data['author']) . '</author>' . "\n";
+			$admin_txt .= "\t" . '<authorEmail>' . $escapeXml($data['authoremail']) . '</authorEmail>' . "\n";
+			$admin_txt .= "\t" . '<authorUrl>' . $escapeXml($data['authorurl']) . '</authorUrl>' . "\n";
+			$admin_txt .= "\t" . '<copyright>' . $escapeXml($data['copyright']) . '</copyright>' . "\n";
+			$admin_txt .= "\t" . '<license>' . $escapeXml($data['license']) . '</license>' . "\n";
 			$admin_txt .= "\t" . '<description>' . $data['language'] . ' - Administration language</description>' . "\n";
 			$admin_txt .= "\t" . '<files>' . "\n";
 			$admin_txt .= "\t\t" . '<folder>/</folder>' . "\n";
@@ -1021,12 +1063,12 @@ class PackageModel extends AdminModel
 			// As this is a core package, the main joomla file joomla.ini should be in the package
 			$path = JPATH_ROOT . '/administrator/language/' . $data['language'] . '/joomla.ini';
 
-			if (File::exists($path))
+			if (is_file($path))
 			{
 				$file_data = file_get_contents($path);
 			}
 
-			if (File::exists($path) && !empty($file_data))
+			if (is_file($path) && !empty($file_data))
 			{
 				$administrator = array_diff($administrator, array("joomla"));
 				$admin_package_files[] = array('name' => 'joomla.ini','data' => $file_data);
@@ -1040,12 +1082,12 @@ class PackageModel extends AdminModel
 			{
 				$path = JPATH_ROOT . '/administrator/language/' . $data['language'] . '/' . $translation . '.ini';
 
-				if (File::exists($path))
+				if (is_file($path))
 				{
 					$file_data = file_get_contents($path);
 				}
 
-				if (File::exists($path) && !empty($file_data))
+				if (is_file($path) && !empty($file_data))
 				{
 					$admin_package_files[] = array('name' => $translation . '.ini','data' => $file_data);
 				}
@@ -1057,13 +1099,13 @@ class PackageModel extends AdminModel
 
 			$path = JPATH_ROOT . '/administrator/language/' . $data['language'] . '/localise.php';
 
-			if (File::exists($path))
+			if (is_file($path))
 			{
 				$language_data = file_get_contents($path);
 			}
 
 			// Create a basic localise.php if not present in target language
-			elseif (!File::exists($path) || empty($languagedata))
+			elseif (!is_file($path) || empty($languagedata))
 			{
 				$language_data = file_get_contents(JPATH_ROOT . '/administrator/language/' . $reftag . '/localise.php');
 				$language_data = str_replace($reftag, $data['language'], $language_data);
@@ -1075,12 +1117,12 @@ class PackageModel extends AdminModel
 			// Add the css file if present
 			$path = JPATH_ROOT . '/administrator/language/' . $data['language'] . '/' . $data['language'] . '.css';
 
-			if (File::exists($path))
+			if (is_file($path))
 			{
 				$css_data = file_get_contents($path);
 			}
 
-			if (File::exists($path) && !empty($css_data))
+			if (is_file($path) && !empty($css_data))
 			{
 				$admin_package_files[] = array('name' => $data['language'] . '.css','data' => $css_data);
 			}
@@ -1119,12 +1161,12 @@ class PackageModel extends AdminModel
 
 		$path = JPATH_ROOT . '/api/language/' . $data['language'] . '/langmetadata.xml';
 
-		if (File::exists($path))
+		if (is_file($path))
 		{
 			$xmldata = file_get_contents($path);
 		}
 
-		if (!File::exists($path) || empty($xmldata))
+		if (!is_file($path) || empty($xmldata))
 		{
 			$app->enqueueMessage(Text::sprintf('COM_LOCALISE_ERROR_NO_XML', 'api', 'langmetadata.xml', 'error'));
 			$app->redirect(Route::_('index.php?option=com_localise&view=package&layout=edit&id=' . $this->getState('package.id'), false));
@@ -1137,15 +1179,15 @@ class PackageModel extends AdminModel
 
 		$api_txt = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 		$api_txt .= '<extension client="api" type="language" method="upgrade">' . "\n";
-		$api_txt .= "\t" . '<name>' . $installName . '</name>' . "\n";
+		$api_txt .= "\t" . '<name>' . $escapeXml($installName) . '</name>' . "\n";
 		$api_txt .= "\t" . '<tag>' . $data['language'] . '</tag>' . "\n";
 		$api_txt .= "\t" . '<version>' . $data['version'] . '.' . $data['packversion'] . '</version>' . "\n";
 		$api_txt .= "\t" . '<creationDate>' . date('Y-m-d') . '</creationDate>' . "\n";
-		$api_txt .= "\t" . '<author>' . $data['author'] . '</author>' . "\n";
-		$api_txt .= "\t" . '<authorEmail>' . $data['authoremail'] . '</authorEmail>' . "\n";
-		$api_txt .= "\t" . '<authorUrl>' . $data['authorurl'] . '</authorUrl>' . "\n";
-		$api_txt .= "\t" . '<copyright>' . $data['copyright'] . '</copyright>' . "\n";
-		$api_txt .= "\t" . '<license>' . $data['license'] . '</license>' . "\n";
+		$api_txt .= "\t" . '<author>' . $escapeXml($data['author']) . '</author>' . "\n";
+		$api_txt .= "\t" . '<authorEmail>' . $escapeXml($data['authoremail']) . '</authorEmail>' . "\n";
+		$api_txt .= "\t" . '<authorUrl>' . $escapeXml($data['authorurl']) . '</authorUrl>' . "\n";
+		$api_txt .= "\t" . '<copyright>' . $escapeXml($data['copyright']) . '</copyright>' . "\n";
+		$api_txt .= "\t" . '<license>' . $escapeXml($data['license']) . '</license>' . "\n";
 		$api_txt .= "\t" . '<description>' . $data['language'] . ' - api language</description>' . "\n";
 		$api_txt .= "\t" . '<files>' . "\n";
 		$api_txt .= "\t\t" . '<folder>/</folder>' . "\n";
@@ -1153,7 +1195,7 @@ class PackageModel extends AdminModel
 		// As this is a core package, the main joomla file joomla.ini is a copy of the administrator joomla file
 		$path = JPATH_ROOT . '/administrator/language/' . $data['language'] . '/joomla.ini';
 
-		if (File::exists($path))
+		if (is_file($path))
 		{
 			$language_data = file_get_contents($path);
 		}
@@ -1184,7 +1226,7 @@ class PackageModel extends AdminModel
 		if (!empty($data['serverurl']))
 		{
 			$text .= "\t" . '<updateservers>' . "\n";
-			$text .= "\t\t" . '<server type="collection" priority="1" name="' . $data['servername'] . '">' . $data['serverurl'] . '</server>' . "\n";
+			$text .= "\t\t" . '<server type="collection" priority="1" name="' . $escapeXml($data['servername']) . '">' . $escapeXml($data['serverurl']) . '</server>' . "\n";
 			$text .= "\t" . '</updateservers>' . "\n";
 		}
 
@@ -1219,9 +1261,7 @@ class PackageModel extends AdminModel
 		header("Expires: 0");
 		header("Last-Modified: " . gmdate("D, d M Y H:i:s") . " GMT");
 		header('Content-Type: application/zip');
-		header('Content-Disposition: attachment; filename="'
-			. $data['language'] . '_joomla_lang_full_'
-			. $data['version'] . 'v' . $data['packversion'] . '.zip"');
+		header('Content-Disposition: attachment; filename="' . $filename . '"');
 		header('Content-Length: ' . strlen($zipdata));
 		header("Cache-Control: maxage=1");
 		header("Pragma: public");
@@ -1297,7 +1337,7 @@ class PackageModel extends AdminModel
 		$table = $this->getTable();
 		$table->load($id);
 
-		$xml = simplexml_load_file($table->path);
+		$xml = LocaliseHelper::loadPackageDefinition($table->path);
 
 		if ($xml)
 		{
@@ -1405,7 +1445,7 @@ class PackageModel extends AdminModel
 		$xml     = false;
 		$xmlpath = JPATH_ADMINISTRATOR . '/components/com_localise/packages/' . $packagename . '.xml';
 
-		if (!empty($packagename) && File::exists($xmlpath))
+		if (!empty($packagename) && is_file($xmlpath))
 		{
 			$xml = simplexml_load_file($xmlpath);
 		}
@@ -1443,65 +1483,6 @@ class PackageModel extends AdminModel
 				foreach ($xml->site->children() as $file)
 				{
 					$key    = substr($file, 0, strlen($file) - 4);
-					$string = preg_quote('value="site_' . $key . '"');
-
-					foreach ($lines as $index => $line)
-					{
-						if (!empty($line))
-						{
-							if (preg_match("/^(.*)$string(.*)$/", $line, $matches))
-							{
-								$content       = 'value="site_' . $key .'"';
-								$newcontent    = 'value="site_' . $key .'" selected="selected" ';
-								$lines[$index] = str_replace($content, $newcontent, $line);
-
-								break;
-							}
-						}
-					}
-				}
-			}
-
-			$html_output = implode("\n", $lines);
-		}
-		elseif (!$xml && $reftag == 'en-GB')
-		{
-			// Useful when creating a new core package that does not have a package name assigned
-			// In that case, the translations to be highlighted from the list will be the set by mandatory from core
-			// when selected language is changed and run this ajax call.
-
-			$xml   = simplexml_load_file(JPATH_ROOT . '/media/com_localise/packages/core.xml');
-			$lines = preg_split("/\\r\\n|\\r|\\n/", $html_output);
-
-			if ($xml->administrator)
-			{
-				foreach ($xml->administrator->children() as $file)
-				{
-					$key    = (string) $file;
-					$string = preg_quote('value="administrator_' . $key . '"');
-
-					foreach ($lines as $index => $line)
-					{
-						if (!empty($line))
-						{
-							if (preg_match("/^(.*)$string(.*)$/", $line, $matches))
-							{
-								$content       = 'value="administrator_' . $key .'"';
-								$newcontent    = 'value="administrator_' . $key .'" selected="selected" ';
-								$lines[$index] = str_replace($content, $newcontent, $line);
-
-								break;
-							}
-						}
-					}
-				}
-			}
-
-			if ($xml->site)
-			{
-				foreach ($xml->site->children() as $file)
-				{
-					$key    = (string) $file;
 					$string = preg_quote('value="site_' . $key . '"');
 
 					foreach ($lines as $index => $line)

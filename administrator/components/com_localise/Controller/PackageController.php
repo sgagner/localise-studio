@@ -71,6 +71,17 @@ class PackageController extends FormController
 		$model = $this->getModel();
 
 		$data = $input->get('jform', array(), 'array');
+		$form = $model->getForm($data, false);
+
+		if (!$form)
+		{
+			throw new \RuntimeException((string) $model->getError());
+		}
+
+		$description = $data['description'] ?? '';
+		$filtered = $form->filter(['description' => is_string($description) ? $description : '']);
+		$data['description'] = $filtered['description'] ?? '';
+
 		$model->download($data);
 	}
 

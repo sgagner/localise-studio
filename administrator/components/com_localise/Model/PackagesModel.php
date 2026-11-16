@@ -13,13 +13,14 @@ defined('_JEXEC') or die;
 
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
-use Joomla\CMS\Filesystem\File;
-use Joomla\CMS\Filesystem\Folder;
+use Joomla\Filesystem\File;
+use Joomla\Filesystem\Folder;
 use Joomla\CMS\Filter\InputFilter;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\MVC\Model\ListModel;
 use Joomla\CMS\Table\Table;
 use Joomla\Component\Localise\Administrator\Helper\LocaliseHelper;
+use Joomla\Component\Localise\Administrator\Helper\PackageExportSnapshot;
 use Joomla\Utilities\ArrayHelper;
 use Joomla\CMS\Form\Form;
 
@@ -137,7 +138,7 @@ class PackagesModel extends ListModel
 
 			foreach ($paths as $path)
 			{
-				if (Folder::exists($path))
+				if (is_dir($path))
 				{
 					$files = Folder::files($path, '\.xml$');
 
@@ -208,6 +209,75 @@ class PackagesModel extends ListModel
 		}
 
 		return $this->items;
+	}
+
+	public function getExportStatus(object $package): array
+	{
+		return $this->buildExportStatus($package, PackageExportSnapshot::read((int) $package->id, $package->language));
+	}
+
+	private function buildExportStatus(object $package, ?array $snapshot): array
+	{
+		if ($snapshot === null)
+		{
+			return ['status' => 'NEVER', 'exportedAt' => 0, 'checkedAt' => 0];
+		}
+
+		$fingerprint = hash('sha256', serialize([
+			$snapshot, $package->installedsource, $package->sourcefiles, $package->translations,
+		]));
+		$check = PackageExportSnapshot::readCheck((int) $package->id, $fingerprint);
+
+		return [
+			'status' => $check['status'] ?? 'UNCHECKED',
+			'exportedAt' => $snapshot['exportedAt'],
+			'checkedAt' => $check['checkedAt'] ?? 0,
+			'fingerprint' => $fingerprint,
+		];
+	}
+
+	public function checkExportStatuses(array $ids): int
+	{
+		$app = Factory::getApplication();
+		$model = new PackagefileModel(['ignore_request' => true]);
+		$count = 0;
+
+		foreach (array_unique(ArrayHelper::toInteger($ids)) as $id)
+		{
+			if ($id < 1 || !$app->getIdentity()->authorise('localise.edit', 'com_localise.' . $id))
+			{
+				continue;
+			}
+
+			$path = LocaliseHelper::getFilePath($id);
+			if (!is_file($path) || LocaliseHelper::isCorePackage($path))
+			{
+				continue;
+			}
+
+			$model->getState();
+			$model->setState('packagefile.id', $id);
+			$package = $model->getItem();
+			if (!$package || !$package->language)
+			{
+				continue;
+			}
+
+			$snapshot = PackageExportSnapshot::read($id, $package->language);
+			if ($snapshot !== null)
+			{
+				$state = $this->buildExportStatus($package, $snapshot);
+				$status = $model->checkExportStatus($package, $snapshot);
+				if (!PackageExportSnapshot::recordCheck($id, $state['fingerprint'], $status))
+				{
+					$app->enqueueMessage(\Joomla\CMS\Language\Text::sprintf('COM_LOCALISE_EXPORT_CHECK_SAVE_FAILED', $id), 'warning');
+					continue;
+				}
+			}
+			$count++;
+		}
+
+		return $count;
 	}
 
 	/**
@@ -299,6 +369,8 @@ class PackagesModel extends ListModel
 
 				return false;
 			}
+
+			PackageExportSnapshot::remove($packageId);
 		}
 
 		return true;
@@ -318,7 +390,7 @@ class PackagesModel extends ListModel
 			$path = LocaliseHelper::getFilePath($packageId);
 			$package = File::stripExt(basename($path));
 
-			if (File::exists($path))
+			if (is_file($path))
 			{
 				ob_clean();
 				$pack = file_get_contents($path);
@@ -354,7 +426,7 @@ class PackagesModel extends ListModel
 			$path = LocaliseHelper::getFilePath($packageId);
 			$package = File::stripExt(basename($path));
 
-			if (File::exists($path))
+			if (is_file($path))
 			{
 				$pack = file_get_contents($path);
 				$newpackage = $package . '_' . Factory::getDate()->format("Y-m-d-H-i-s");
@@ -369,7 +441,7 @@ class PackagesModel extends ListModel
 				return false;
 			}
 
-			if (!File::exists($newpath))
+			if (!is_file($newpath))
 			{
 				$this->setError(Text::sprintf('COM_LOCALISE_ERROR_PACKAGES_CLONE', $package));
 

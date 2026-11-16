@@ -11,8 +11,8 @@ namespace Joomla\Component\Localise\Administrator\Field;
 defined('_JEXEC') or die;
 
 use Joomla\CMS\Component\ComponentHelper;
-use Joomla\CMS\Filesystem\File;
-use Joomla\CMS\Filesystem\Folder;
+use Joomla\Filesystem\File;
+use Joomla\Filesystem\Folder;
 use Joomla\CMS\Form\Field\GroupedlistField;
 use Joomla\CMS\HTML\HTMLHelper;
 use Joomla\CMS\Language\Text;
@@ -130,7 +130,7 @@ class TranslationsField extends GroupedlistField
 
 			$path = constant('LOCALISEPATH_' . strtoupper($client)) . '/language';
 
-			if (Folder::exists($path))
+			if (is_dir($path))
 			{
 				$tags = Folder::folders($path, '.', false, false, array('overrides', '.svn', 'CVS', '.DS_Store', '__MACOSX'));
 
@@ -241,6 +241,27 @@ class TranslationsField extends GroupedlistField
 						$groups[$client][$file]->class = $prevclass . " extra";
 					}
 				}
+			}
+		}
+
+		// Keep unavailable manifest entries visible so they can be reviewed and removed.
+		$clients = array('site' => 'Site', 'administrator' => 'Administrator', 'installation' => 'Installation');
+
+		foreach ((array) $this->value as $selection)
+		{
+			if (!preg_match('/^(site|administrator|installation)_([a-zA-Z0-9_.-]+)$/D', $selection, $matches))
+			{
+				continue;
+			}
+
+			$client = $clients[$matches[1]];
+			$file   = $matches[2];
+
+			if (!isset($groups[$client][$file]))
+			{
+				$option = HTMLHelper::_('select.option', $selection, $file, 'value', 'text', false);
+				$option->class = 'missing';
+				$groups[$client][$file] = $option;
 			}
 		}
 

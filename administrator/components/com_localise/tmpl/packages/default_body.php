@@ -19,6 +19,8 @@ $user = Factory::getUser();
 <?php foreach($this->items as $i => $item) : ?>
 	<?php if ($item->name !== 'core') : ?>
 		<?php $canEdit = $user->authorise('localise.edit', 'com_localise.'.$item->id); ?>
+		<?php $title = $this->escape(Text::_($item->title)); ?>
+		<?php $name = $this->escape($item->name); ?>
 		<tr class="row<?php echo $i % 2; ?>">
 			<td width="20" class="center hidden-phone"><?php echo $i + 1; ?></td>
 			<td width="20" class="center hidden-phone">
@@ -31,33 +33,33 @@ $user = Factory::getUser();
 				<?php endif; ?>
 			</td>
 			<td>
-				<span title="<?php echo Text::_($item->title); ?>" class="hasTooltip localise-icon "></span>
+				<span title="<?php echo $title; ?>" class="hasTooltip localise-icon "></span>
 				<?php if (!$canEdit) : ?>
 					<span title="<?php echo Text::_('COM_LOCALISE_TOOLTIP_PACKAGES_READONLY'); ?>"  class="hasTooltip localise-icon icon-warning"></span>
-					<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', Text::_($item->title), $item->name); ?>
+					<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', $title, $name); ?>
 				<?php elseif ($item->writable && $canEdit) : ?>
 					<span class="localise-icon">
 					<?php if ($item->core) : ?>
 						<a class="hasTooltip" href="<?php echo Route::_('index.php?option=com_localise&task=package.edit&id=' . $item->id); ?>" title="<?php echo Text::_('COM_LOCALISE_TOOLTIP_PACKAGES_EDIT'); ?>">
-						<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', Text::_($item->title), $item->name); ?>
+						<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', $title, $name); ?>
 						</a>
 					<?php else: ?>
 						<a class="hasTooltip" href="<?php echo Route::_('index.php?option=com_localise&task=packagefile.edit&id=' . $item->id); ?>" title="<?php echo Text::_('COM_LOCALISE_TOOLTIP_PACKAGES_EDIT'); ?>">
-						<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', Text::_($item->title), $item->name); ?>
+						<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', $title, $name); ?>
 						</a>
 					<?php endif; ?>
 					</span>
 				<?php else : ?>
 					<span title="<?php echo Text::sprintf($canEdit ? 'COM_LOCALISE_TOOLTIP_PACKAGES_NOTWRITABLE':'COM_LOCALISE_TOOLTIP_PACKAGES_NOTEDITABLE', substr($item->path, strlen(JPATH_ROOT) + 1)); ?>"  class="hasTooltip localise-icon icon-16-warning">
-						<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE',$item->title,$item->name); ?>
+						<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', $title, $name); ?>
 					</span>
 				<?php endif; ?>
 			</td>
 			<td>
-				<?php echo $item->language; ?>
+				<?php echo $this->escape($item->language); ?>
 			</td>
 			<td>
-				<?php echo $item->version; echo (!empty($item->packversion) ? '.' . $item->packversion : ''); ?>
+				<?php echo $this->escape($item->version . (!empty($item->packversion) ? '.' . $item->packversion : '')); ?>
 			</td>
 			<td>
 				<?php if ($item->core) : ?>
@@ -66,6 +68,22 @@ $user = Factory::getUser();
 				<?php else: ?>
 					<span class="fa fa-file"></span>
 					<?php echo Text::_('COM_LOCALISE_FILE'); ?>
+				<?php endif; ?>
+			</td>
+			<td>
+				<?php if ($status = $this->exportStatuses[$item->id] ?? null) : ?>
+					<div><?php echo Text::_('COM_LOCALISE_EXPORT_STATUS_' . $status['status']); ?></div>
+					<?php if ($status['exportedAt']) : ?>
+						<div class="small"><?php echo Text::sprintf('COM_LOCALISE_EXPORT_STATUS_EXPORTED', HTMLHelper::_('date', gmdate('Y-m-d H:i:s', $status['exportedAt']), Text::_('DATE_FORMAT_LC5'))); ?></div>
+					<?php endif; ?>
+					<?php if ($status['checkedAt']) : ?>
+						<div class="small"><?php echo Text::sprintf('COM_LOCALISE_EXPORT_STATUS_CHECKED', HTMLHelper::_('date', gmdate('Y-m-d H:i:s', $status['checkedAt']), Text::_('DATE_FORMAT_LC5'))); ?></div>
+					<?php endif; ?>
+					<?php if ($status['status'] === 'CHANGED' && $canEdit && $item->writable) : ?>
+						<a href="<?php echo Route::_('index.php?option=com_localise&task=packagefile.edit&id=' . $item->id . '#localise-preview-export'); ?>">
+							<?php echo Text::_('COM_LOCALISE_PREVIEW_EXPORT'); ?>
+						</a>
+					<?php endif; ?>
 				<?php endif; ?>
 			</td>
 		</tr>

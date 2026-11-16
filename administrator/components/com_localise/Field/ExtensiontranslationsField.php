@@ -11,8 +11,8 @@ namespace Joomla\Component\Localise\Administrator\Field;
 defined('_JEXEC') or die;
 
 use Joomla\CMS\Component\ComponentHelper;
-use Joomla\CMS\Filesystem\File;
-use Joomla\CMS\Filesystem\Folder;
+use Joomla\Filesystem\File;
+use Joomla\Filesystem\Folder;
 use Joomla\CMS\Form\Field\GroupedlistField;
 use Joomla\CMS\HTML\HTMLHelper;
 use Joomla\CMS\Language\Text;
@@ -46,6 +46,42 @@ class ExtensiontranslationsField extends GroupedlistField
 	protected function getGroups()
 	{
 		HTMLHelper::_('stylesheet', 'com_localise/localise.css', array('version' => 'auto', 'relative' => true));
+
+		$suggested = (string) $this->element['suggestedfiles'];
+
+		if ($suggested !== '')
+		{
+			$labels = ['site' => Text::_('JSITE'), 'administrator' => Text::_('JADMINISTRATOR')];
+			$groups = array_fill_keys(array_values($labels), []);
+			$files = json_decode($suggested, true) ?? [];
+			$new = array_fill_keys(json_decode((string) $this->element['newfiles'], true) ?? [], true);
+			$missing = array_fill_keys(json_decode((string) $this->element['missingfiles'], true) ?? [], true);
+			$changed = array_fill_keys(json_decode((string) $this->element['changedfiles'], true) ?? [], true);
+			sort($files, SORT_NATURAL | SORT_FLAG_CASE);
+
+			foreach ($files as $value)
+			{
+				[$client, $filename] = explode('_', $value, 2);
+				$label = $filename . '.ini';
+
+				if (isset($new[$value]))
+				{
+					$label = Text::sprintf('COM_LOCALISE_SOURCE_FILE_NEW', $label);
+				}
+				elseif (isset($missing[$value]))
+				{
+					$label = Text::sprintf('COM_LOCALISE_SOURCE_FILE_MISSING', $label);
+				}
+				elseif (isset($changed[$value]))
+				{
+					$label = Text::sprintf('COM_LOCALISE_SOURCE_FILE_CHANGED', $label);
+				}
+
+				$groups[$labels[$client]][] = HTMLHelper::_('select.option', $value, $label);
+			}
+
+			return $groups;
+		}
 
 		$params = ComponentHelper::getParams('com_localise');
 		$reftag	= $params->get('reference', '');
@@ -135,7 +171,7 @@ class ExtensiontranslationsField extends GroupedlistField
 
 			$path = constant('LOCALISEPATH_' . strtoupper($client)) . '/language';
 
-			if (Folder::exists($path))
+			if (is_dir($path))
 			{
 				$tags = Folder::folders($path, '.', false, false, array('overrides', '.svn', 'CVS', '.DS_Store', '__MACOSX'));
 
@@ -218,7 +254,7 @@ class ExtensiontranslationsField extends GroupedlistField
 					|| ($client == 'Site' && !in_array($file, $coresitefiles))
 					|| ($client == 'Administrator' && !in_array($file, $coreadminfiles)))
 				{
-					if (Folder::exists("$path$extension/language"))
+					if (is_dir("$path$extension/language"))
 					{
 						// Scan extensions folder
 						$tags = Folder::folders("$path$extension/language");
@@ -235,7 +271,7 @@ class ExtensiontranslationsField extends GroupedlistField
 							//Getting the $origin to avoid add, for example, overrides
 							$origin = LocaliseHelper::getOrigin("$prefix$extension$suffix", strtolower($client));
 
-							if (File::exists($file) && in_array($origin, $requiredtypes))
+							if (is_file($file) && in_array($origin, $requiredtypes))
 							{
 								if (!in_array("$prefix$extension$suffix", $allfiles[$client][$tag]))
 								{

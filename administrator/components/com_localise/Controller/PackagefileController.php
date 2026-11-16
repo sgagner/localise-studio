@@ -71,13 +71,49 @@ class PackageFileController extends FormController
 	 */
 	public function download()
 	{
+		$this->checkToken();
+
 		// Initialise variables.
 		$app   = Factory::getApplication();
 		$input = $app->input;
 		$model = $this->getModel();
 
 		$data = $input->get('jform', array(), 'array');
+		$form = $model->getForm($data, false);
+
+		if (!$form)
+		{
+			throw new \RuntimeException((string) $model->getError());
+		}
+
+		$description = $data['description'] ?? '';
+		$filtered = $form->filter(['description' => is_string($description) ? $description : '']);
+		$data['description'] = $filtered['description'] ?? '';
+
 		$model->download($data);
+	}
+
+	public function previewexport()
+	{
+		$this->checkToken();
+		$app = Factory::getApplication();
+		$id = $app->input->getInt('id');
+		$data = $app->input->post->get('jform', [], 'array');
+
+		if (($id && !$this->allowEdit(['id' => $id])) || (!$id && !$this->allowAdd()))
+		{
+			echo new JsonResponse(null, Text::_('JERROR_ALERTNOAUTHOR'), true);
+		}
+		elseif (!is_string($data['language'] ?? null) || !preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)+$/iD', $data['language']))
+		{
+			echo new JsonResponse(null, Text::_('JLIB_FORM_VALIDATE_FIELD_INVALID') . ' ' . Text::_('JFIELD_LANGUAGE_LABEL'), true);
+		}
+		else
+		{
+			echo new JsonResponse($this->getModel()->previewExport($data, $id));
+		}
+
+		$app->close();
 	}
 
 	/**
@@ -102,7 +138,11 @@ class PackageFileController extends FormController
 			$model       = $this->getModel();
 			$html_output = $model->updateTranslationsList($data);
 
-			if ($html_output->translations)
+			if (!empty($html_output->sourceUnavailable))
+			{
+				$reply->sourceUnavailable = true;
+			}
+			elseif (!empty($html_output->translations))
 			{
 				// If required send a notice as system message do it before "echo new JsonResponse", if not, comment next line.
 		 		$app->enqueueMessage(Text::_('COM_LOCALISE_TASK_UPDATE_TRANSLATIONS_LIST_SUCCESS'), 'notice');
@@ -111,6 +151,8 @@ class PackageFileController extends FormController
 				$reply->success_message = Text::_('COM_LOCALISE_TASK_UPDATE_TRANSLATIONS_LIST_SUCCESS_FLASH');
 				$reply->html            = true;
 				$reply->translations    = $html_output->translations;
+				$reply->fileChanges     = $html_output->fileChanges ?? null;
+				$reply->sourceFiles     = $html_output->sourceFiles ?? null;
 			}
 			else
 			{

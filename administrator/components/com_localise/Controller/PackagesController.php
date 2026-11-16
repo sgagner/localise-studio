@@ -71,6 +71,16 @@ class PackagesController extends AdminController
 	 *
 	 * @return  void
 	 */
+	public function checkFileChanges()
+	{
+		$this->checkToken();
+		$app = Factory::getApplication();
+		$app->getLanguage()->load('com_localise_picker', JPATH_COMPONENT_ADMINISTRATOR);
+		$count = $this->getModel()->checkExportStatuses($app->input->post->get('cid', [], 'array'));
+		$app->enqueueMessage(Text::sprintf('COM_LOCALISE_EXPORT_CHECK_RESULT', $count));
+		$this->setRedirect(Route::_('index.php?option=com_localise&view=packages', false));
+	}
+
 	public function delete()
 	{
 		// Check for request forgeries.

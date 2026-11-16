@@ -14,10 +14,10 @@ defined('_JEXEC') or die;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Date\Date;
 use Joomla\CMS\Factory;
-use Joomla\CMS\Filesystem\File;
-use Joomla\CMS\Filesystem\Folder;
-use Joomla\CMS\Filesystem\Path;
-use Joomla\CMS\Filesystem\Stream;
+use Joomla\Filesystem\File;
+use Joomla\Filesystem\Folder;
+use Joomla\Filesystem\Path;
+use Joomla\CMS\Form\Filter\SafehtmlFilter;
 use Joomla\CMS\HTML\HTMLHelper;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Table\Table;
@@ -504,12 +504,195 @@ abstract class LocaliseHelper
 	 */
 	public static function isCorePackage($path)
 	{
-		if (is_file($path) || preg_match('/.ini$/', $path))
-		{
-			$xml = simplexml_load_file($path);
+		$xml = self::loadPackageDefinition($path);
 
-			return ((string) $xml->attributes()->core) == 'true';
+		return $xml ? (string) $xml['core'] === 'true' : null;
+	}
+
+	/**
+	 * Read a Localise package definition or a Joomla language installation manifest.
+	 */
+	public static function loadPackageDefinition($path, string $selectedLanguage = '')
+	{
+		if (!$path || !is_file($path))
+		{
+			return false;
 		}
+
+		$xml = simplexml_load_file($path, 'SimpleXMLElement', LIBXML_NONET);
+
+		if ($xml === false || $xml->getName() !== 'extension')
+		{
+			return $xml;
+		}
+
+		$type = (string) $xml['type'];
+		$language = '';
+		$files = [];
+
+		if ($type === 'package')
+		{
+			$language = trim((string) $xml->packagename);
+
+			if (!preg_match('/^[a-z]{2,3}-[a-z0-9-]{2,}$/iD', $language))
+			{
+				foreach ($xml->xpath('files/*[@type="language"]') as $child)
+				{
+					$tag = (string) $child['id'];
+
+					if (preg_match('/^[a-z]{2,3}-[a-z0-9-]{2,}$/iD', $tag))
+					{
+						$language = $tag;
+						break;
+					}
+				}
+			}
+		}
+		elseif ($type === 'file')
+		{
+			foreach ($xml->xpath('fileset/files') as $group)
+			{
+				if (preg_match('#^/?(?:administrator/)?language/([a-z]{2,3}-[a-z0-9-]{2,})/?$#iD', (string) $group['target'], $match))
+				{
+					$language = $match[1];
+					break;
+				}
+			}
+
+			$files = self::getFileSetLanguageFiles($xml, $language);
+		}
+		elseif ($type === 'component')
+		{
+			$validTag = '/^[a-z]{2,3}-[a-z0-9-]{2,}$/iD';
+			$language = preg_match($validTag, $selectedLanguage) ? $selectedLanguage : '';
+
+			$files = self::getManifestLanguageFiles($xml, $language, 'site');
+		}
+
+		if ($type !== 'component' && !preg_match('/^[a-z]{2,3}-[a-z0-9-]{2,}$/iD', $language))
+		{
+			return $xml;
+		}
+
+		$definition = new \SimpleXMLElement('<package/>');
+		$version = trim((string) $xml->version);
+		$revision = $type === 'package' ? '0' : '';
+
+		if (preg_match('/^([0-9]+\.[0-9]+\.[0-9]+)\.([0-9]+)$/D', $version, $match))
+		{
+			[, $version, $revision] = $match;
+		}
+
+		if ($type === 'package')
+		{
+			$definition->addAttribute('core', 'true');
+			$definition->addChild('blockuninstall', in_array((string) $xml->blockChildUninstall, ['true', '1'], true) ? '1' : '0');
+		}
+
+		$server = $xml->updateservers->server ?? null;
+		$data = [
+			'title'       => (string) $xml->name,
+			'manifest'    => pathinfo($path, PATHINFO_FILENAME),
+			'version'     => $version,
+			'packversion' => $revision,
+			'language'    => $language,
+			'description' => (new SafehtmlFilter)->filter(new \SimpleXMLElement('<field/>'), (string) $xml->description),
+			'author'      => (string) $xml->author,
+			'authoremail' => (string) $xml->authorEmail,
+			'authorurl'   => (string) $xml->authorUrl,
+			'copyright'   => (string) $xml->copyright,
+			'license'     => (string) $xml->license,
+			'url'         => (string) $xml->url,
+			'packager'    => (string) $xml->packager,
+			'packagerurl' => (string) $xml->packagerurl,
+			'servername'  => $server ? (string) $server['name'] : '',
+			'serverurl'   => (string) $server,
+		];
+
+		foreach ($data as $field => $value)
+		{
+			$definition->addChild($field, htmlspecialchars($value, ENT_XML1 | ENT_QUOTES, 'UTF-8'));
+		}
+
+		// Core manifests name child language packages. Their individual files must be selected in the form.
+		foreach ($files as $client => $filenames)
+		{
+			$group = $definition->addChild($client);
+
+			foreach (array_unique($filenames) as $filename)
+			{
+				$group->addChild('filename', $filename);
+			}
+		}
+
+		return $definition;
+	}
+
+	/**
+	 * Read language declarations and map them to Joomla's installation clients.
+	 */
+	public static function getManifestLanguageFiles(\SimpleXMLElement $manifest, ?string $language, string $defaultClient): array
+	{
+		$files = [];
+
+		if ($language === '')
+		{
+			return $files;
+		}
+
+		foreach (['languages/language' => $defaultClient, 'administration/languages/language' => 'administrator'] as $query => $client)
+		{
+			foreach ($manifest->xpath($query) as $entry)
+			{
+				$target = (string) $entry['client'] ?: $client;
+
+				if (($language !== null && strcasecmp((string) $entry['tag'], $language) !== 0)
+					|| !in_array($target, ['site', 'administrator'], true))
+				{
+					continue;
+				}
+
+				$filename = basename(trim((string) $entry));
+
+				if (preg_match('/^[a-z0-9_][a-z0-9._-]*\.ini$/iD', $filename))
+				{
+					$files[$target][] = $filename;
+				}
+			}
+		}
+
+		return $files;
+	}
+
+	/**
+	 * Read the INI files a Joomla file manifest installs into the given language.
+	 */
+	public static function getFileSetLanguageFiles(\SimpleXMLElement $manifest, string $language): array
+	{
+		$files = [];
+
+		if (!preg_match('/^[a-z]{2,3}-[a-z0-9-]{2,}$/iD', $language))
+		{
+			return $files;
+		}
+
+		$targetPattern = '#^/?(administrator/)?language/' . preg_quote($language, '#') . '/([a-z0-9_][a-z0-9._-]*\.ini)$#iD';
+
+		foreach ($manifest->xpath('fileset/files') as $group)
+		{
+			$target = rtrim((string) $group['target'], '/');
+
+			foreach ($group->filename as $entry)
+			{
+				if (preg_match($targetPattern, $target . '/' . trim((string) $entry), $match))
+				{
+					$client = $match[1] === '' ? 'site' : 'administrator';
+					$files[$client][] = $match[2];
+				}
+			}
+		}
+
+		return $files;
 	}
 
 	/**
@@ -807,7 +990,7 @@ abstract class LocaliseHelper
 			$versions_path = JPATH_ROOT
 					. '/administrator/components/com_localise/customisedref/stable_joomla_releases.txt';
 
-			if (File::exists($versions_path))
+			if (is_file($versions_path))
 			{
 				$versions_file = file_get_contents($versions_path);
 				$versions      = preg_split("/\\r\\n|\\r|\\n/", $versions_file);
@@ -906,7 +1089,7 @@ abstract class LocaliseHelper
 			$xml_file = $custom_client_path . '/langmetadata.xml';
 
 			// Unrequired move or update files again
-			if ($saved_ref != '0' && $installed_version == $last_source && File::exists($xml_file))
+			if ($saved_ref != '0' && $installed_version == $last_source && is_file($xml_file))
 			{
 				return false;
 			}
@@ -926,7 +1109,7 @@ abstract class LocaliseHelper
 			$reference_client_path = JPATH_ROOT . '/' . $gh_paths[$gh_client];
 			$reference_client_path = Folder::makeSafe($reference_client_path);
 
-			if (File::exists($xml_file))
+			if (is_file($xml_file))
 			{
 				// We have done this trunk and is not required get the files from Github again.
 				$update_files = self::updateSourcereference($gh_client, $custom_client_path);
@@ -978,7 +1161,7 @@ abstract class LocaliseHelper
 				return false;
 			}
 
-			if (!Folder::exists($custom_client_path))
+			if (!is_dir($custom_client_path))
 			{
 				$create_folder = self::createFolder($gh_data, $index = 'true');
 
@@ -1092,7 +1275,7 @@ abstract class LocaliseHelper
 
 					File::write($file_path, $file_contents);
 
-					if (!File::exists($file_path))
+					if (!is_file($file_path))
 					{
 						Factory::getApplication()->enqueueMessage(
 							Text::_('COM_LOCALISE_ERROR_GITHUB_UNABLE_TO_CREATE_DEV_FILE'),
@@ -1140,7 +1323,7 @@ abstract class LocaliseHelper
 							$file_path = Folder::makeSafe($custom_client_path . "/" . $file_to_delete);
 							File::delete($file_path);
 
-							if (File::exists($file_path))
+							if (is_file($file_path))
 							{
 								Factory::getApplication()->enqueueMessage(
 									Text::_('COM_LOCALISE_ERROR_GITHUB_FILE_TO_DELETE_IS_PRESENT'),
@@ -1153,7 +1336,7 @@ abstract class LocaliseHelper
 				}
 			}
 
-			if (File::exists($xml_file))
+			if (is_file($xml_file))
 			{
 				// We have done this trunk.
 
@@ -1362,7 +1545,7 @@ abstract class LocaliseHelper
 							. $client
 							. '_last_source_ref.txt';
 
-			if (File::exists($last_reference_file))
+			if (is_file($last_reference_file))
 			{
 				$file_contents = file_get_contents($last_reference_file);
 				$lines = preg_split("/\\r\\n|\\r|\\n/", $file_contents);
@@ -1450,7 +1633,7 @@ abstract class LocaliseHelper
 			}
 		}
 
-		if (!File::exists($develop_client_path . '/langmetadata.xml'))
+		if (!is_file($develop_client_path . '/langmetadata.xml'))
 		{
 			Factory::getApplication()->enqueueMessage(
 				Text::_('COM_LOCALISE_ERROR_GITHUB_UNABLE_TO_UPDATE_TARGET_FILES'),
@@ -1458,7 +1641,7 @@ abstract class LocaliseHelper
 
 			return false;
 		}
-		elseif (!File::exists($custom_client_path . '/langmetadata.xml'))
+		elseif (!is_file($custom_client_path . '/langmetadata.xml'))
 		{
 			Factory::getApplication()->enqueueMessage(
 				Text::_('COM_LOCALISE_ERROR_GITHUB_UNABLE_TO_UPDATE_SOURCE_FILES'),
@@ -1522,7 +1705,7 @@ abstract class LocaliseHelper
 
 		$files_to_exclude = array();
 
-		if (!File::exists($develop_client_path . '/langmetadata.xml'))
+		if (!is_file($develop_client_path . '/langmetadata.xml'))
 		{
 			Factory::getApplication()->enqueueMessage(
 				Text::_('COM_LOCALISE_ERROR_GITHUB_UNABLE_TO_UPDATE_TARGET_FILES'),
@@ -1530,7 +1713,7 @@ abstract class LocaliseHelper
 
 			return false;
 		}
-		elseif (!File::exists($custom_client_path . '/langmetadata.xml'))
+		elseif (!is_file($custom_client_path . '/langmetadata.xml'))
 		{
 			Factory::getApplication()->enqueueMessage(
 				Text::_('COM_LOCALISE_ERROR_GITHUB_UNABLE_TO_UPDATE_SOURCE_FILES'),
@@ -1555,7 +1738,7 @@ abstract class LocaliseHelper
 
 				// Also verify if the same file is also present in core language folder.
 
-				if (File::exists($actual_file_path))
+				if (is_file($actual_file_path))
 				{
 					File::delete($actual_file_path);
 
@@ -1643,7 +1826,7 @@ abstract class LocaliseHelper
 			$develop_client_path = Folder::makeSafe($develop_client_path);
 			$xml_file            = $develop_client_path . '/langmetadata.xml';
 
-			if (!File::exists($xml_file))
+			if (!is_file($xml_file))
 			{
 				$get_files = 1;
 			}
@@ -1742,7 +1925,7 @@ abstract class LocaliseHelper
 					&& ($sha_files_list[$file_to_include] != $repostoryfile->sha))
 					|| empty($sha_files_list)
 					|| !array_key_exists($file_to_include, $sha_files_list)
-					|| !File::exists($file_path))
+					|| !is_file($file_path))
 				{
 					$in_dev_file = $github->repositories->contents->get(
 							$gh_user,
@@ -1766,7 +1949,7 @@ abstract class LocaliseHelper
 					$file_contents = base64_decode($in_dev_file->content);
 					File::write($file_path, $file_contents);
 
-					if (!File::exists($file_path))
+					if (!is_file($file_path))
 					{
 						Factory::getApplication()->enqueueMessage(
 							Text::_('COM_LOCALISE_ERROR_GITHUB_UNABLE_TO_CREATE_DEV_FILE'),
@@ -1775,13 +1958,13 @@ abstract class LocaliseHelper
 						return false;
 					}
 
-					if (!File::exists($reference_file_path)
+					if (!is_file($reference_file_path)
 						&& ($gh_client == 'administrator' || $gh_client == 'site'))
 					{
 						// Adding files only present in develop to core reference location.
 						File::write($reference_file_path, $file_contents);
 
-						if (!File::exists($reference_file_path))
+						if (!is_file($reference_file_path))
 						{
 							Factory::getApplication()->enqueueMessage(
 								Text::_('COM_LOCALISE_ERROR_GITHUB_UNABLE_TO_ADD_NEW_FILES'),
@@ -1801,7 +1984,7 @@ abstract class LocaliseHelper
 				$sha .= $repostoryfile->name . "::" . $repostoryfile->sha . "\n";
 				File::write($sha_path, $sha);
 
-				if (!File::exists($sha_path))
+				if (!is_file($sha_path))
 				{
 					Factory::getApplication()->enqueueMessage(
 						Text::_('COM_LOCALISE_ERROR_GITHUB_NO_SHA_FILE_PRESENT'),
@@ -1859,7 +2042,7 @@ abstract class LocaliseHelper
 							$file_path = Folder::makeSafe($develop_client_path . "/" . $file_to_delete);
 							File::delete($file_path);
 
-							if (File::exists($file_path))
+							if (is_file($file_path))
 							{
 								Factory::getApplication()->enqueueMessage(
 									Text::sprintf('COM_LOCALISE_ERROR_GITHUB_FILE_TO_DELETE_IS_PRESENT', $file_to_delete),
@@ -1876,7 +2059,7 @@ abstract class LocaliseHelper
 				}
 			}
 
-			if (!File::exists($xml_file))
+			if (!is_file($xml_file))
 			{
 				Factory::getApplication()->enqueueMessage(
 					Text::sprintf('COM_LOCALISE_ERROR_GITHUB_UNABLE_TO_GET_A_FULL_SET', $gh_branch),
@@ -2065,7 +2248,7 @@ abstract class LocaliseHelper
 		$ref_file            = basename($refpath);
 		$develop_file_path   = Folder::makeSafe("$develop_client_path/$ref_file");
 
-		if (File::exists($develop_file_path) && $allow_develop == 1 && $ref_tag == 'en-GB')
+		if (is_file($develop_file_path) && $allow_develop == 1 && $ref_tag == 'en-GB')
 		{
 			$devpath = $develop_file_path;
 		}
@@ -2102,7 +2285,7 @@ abstract class LocaliseHelper
 		$ref_file         = basename($refpath);
 		$custom_file_path = Folder::makeSafe("$custom_client_path/$ref_file");
 
-		if (File::exists($custom_file_path) && $allow_develop == 1 && $ref_tag == 'en-GB' && $customisedref != 0)
+		if (is_file($custom_file_path) && $allow_develop == 1 && $ref_tag == 'en-GB' && $customisedref != 0)
 		{
 			$custom_path = $custom_file_path;
 		}
@@ -2133,18 +2316,20 @@ abstract class LocaliseHelper
 		$allow_develop      = $params->get('gh_allow_develop', 0);
 		$combined_content   = '';
 
-		if (File::exists($devpath) && File::exists($refpath) && $allow_develop == 1 && $ref_tag == 'en-GB')
+		if (is_file($devpath) && is_file($refpath) && $allow_develop == 1 && $ref_tag == 'en-GB')
 		{
 			$ref_sections      = self::parseSections($refpath);
 			$keys_in_reference = array_keys($ref_sections['keys']);
 
-			$stream = new Stream;
-			$stream->open($devpath);
-			$stream->seek(0);
-
-			while (!$stream->eof())
+			$stream = fopen($devpath, 'rb');
+			if ($stream === false)
 			{
-				$line = $stream->gets();
+				throw new \RuntimeException('Unable to open language file: ' . basename($devpath));
+			}
+			rewind($stream);
+
+			while (($line = fgets($stream)) !== false)
+			{
 
 				if (preg_match('/^([A-Z][A-Z0-9_:\*\-\.]*)\s*=/', $line, $matches))
 				{
@@ -2166,7 +2351,7 @@ abstract class LocaliseHelper
 				}
 			}
 
-			$stream->close();
+			fclose($stream);
 		}
 
 		return $combined_content;
@@ -2229,7 +2414,7 @@ abstract class LocaliseHelper
 		$gh_client = $gh_data['github_client'];
 		$sha_path  = Folder::makeSafe(JPATH_COMPONENT_ADMINISTRATOR . '/develop/gh_joomla_' . $gh_client . '_files.txt');
 
-		if (File::exists($sha_path))
+		if (is_file($sha_path))
 		{
 			$file_contents = file_get_contents($sha_path);
 			$lines = preg_split("/\\r\\n|\\r|\\n/", $file_contents);
@@ -2727,7 +2912,7 @@ abstract class LocaliseHelper
 			{
 			}
 
-			if (Folder::exists($full_path))
+			if (is_dir($full_path))
 			{
 				if ($index == 'true')
 				{
@@ -2773,12 +2958,12 @@ abstract class LocaliseHelper
 
 		$index_content = '<!DOCTYPE html><title></title>';
 
-			if (!File::exists($path))
+			if (!is_file($path))
 			{
 				File::write($path, $index_content);
 			}
 
-			if (!File::exists($path))
+			if (!is_file($path))
 			{
 				return false;
 			}

@@ -48,11 +48,22 @@ class HtmlView extends BaseHtmlView
 	 *
 	 * @return  void
 	 */
+	protected $exportStatuses = [];
+
 	public function display($tpl = null)
 	{
 		// Get the data
 		$app                 = Factory::getApplication();
+		$app->getLanguage()->load('com_localise_picker', JPATH_COMPONENT_ADMINISTRATOR);
 		$this->items         = $this->get('Items');
+		$this->exportStatuses = [];
+		foreach ($this->items as $item)
+		{
+			if (!$item->core && !empty($item->language))
+			{
+				$this->exportStatuses[$item->id] = $this->getModel()->getExportStatus($item);
+			}
+		}
 		$this->pagination    = $this->get('Pagination');
 		$this->state         = $this->get('State');
 		$this->form          = $this->get('Form');
@@ -138,6 +149,8 @@ class HtmlView extends BaseHtmlView
 			ToolBarHelper::modal('fileModal', 'icon-upload', 'COM_LOCALISE_BUTTON_IMPORT_XML');
 			ToolBarHelper::custom('packages.export',  'out.png', 'out.png', 'COM_LOCALISE_BUTTON_EXPORT_XML', true, false);
 		}
+
+		ToolBarHelper::custom('packages.checkFileChanges', 'refresh', 'refresh', 'COM_LOCALISE_CHECK_FILE_CHANGES', true);
 
 		if ($canDo->get('core.admin'))
 		{

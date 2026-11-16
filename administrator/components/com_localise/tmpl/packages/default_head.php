@@ -10,6 +10,7 @@
 defined('_JEXEC') or die;
 
 use Joomla\CMS\HTML\HTMLHelper;
+use Joomla\CMS\Language\Text;
 
 $listOrder = $this->escape($this->state->get('list.ordering'));
 $listDirn  = $this->escape($this->state->get('list.direction'));
@@ -21,4 +22,5 @@ $listDirn  = $this->escape($this->state->get('list.direction'));
 	<th class="title"><?php echo HTMLHelper::_('searchtools.sort', 'COM_LOCALISE_LABEL_PACKAGE_LANGUAGE', 'language', $listDirn, $listOrder); ?></th>
 	<th class="title"><?php echo HTMLHelper::_('searchtools.sort', 'COM_LOCALISE_LABEL_PACKAGE_VERSION', 'version', $listDirn, $listOrder); ?></th>
 	<th width="20%"><?php echo HTMLHelper::_('searchtools.sort', 'COM_LOCALISE_HEADING_PACKAGES_TYPE', 'core', $listDirn, $listOrder); ?></th>
+	<th scope="col"><?php echo Text::_('COM_LOCALISE_EXPORT_STATUS_HEADING'); ?></th>
 </tr>

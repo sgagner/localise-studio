@@ -4,6 +4,8 @@
 		name="default"
 		label="COM_LOCALISE_FIELDSET_PACKAGEFILE_DETAIL"
 		description="COM_LOCALISE_FIELDSET_PACKAGEFILE_DETAIL_DESC">
+		<field name="installedsource" type="hidden" filter="string" />
+		<field name="checkedsourcefiles" type="hidden" filter="string" />
 		<field
 			name="asset_id"
 			type="hidden"
@@ -19,7 +21,9 @@
 		<field
 			id="description"
 			name="description"
-			type="textarea"
+			type="editor"
+			editor="tinymce"
+			buttons="false"
 			filter="safehtml"
 			label="COM_LOCALISE_LABEL_PACKAGE_DESCRIPTION"
 			description="COM_LOCALISE_LABEL_PACKAGE_DESCRIPTION_DESC" />

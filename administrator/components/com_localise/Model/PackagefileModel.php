@@ -16,9 +16,8 @@ use Joomla\CMS\Access\Rules as JAccessRules;
 use Joomla\CMS\Client\ClientHelper;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
-use Joomla\CMS\Filesystem\File;
-use Joomla\CMS\Filesystem\Folder;
-use Joomla\CMS\Filesystem\Path;
+use Joomla\Filesystem\File;
+use Joomla\Filesystem\Path;
 use Joomla\CMS\Form\Form;
 use Joomla\CMS\Form\FormField;
 use Joomla\CMS\Language\Text;
@@ -26,6 +25,8 @@ use Joomla\CMS\MVC\Model\AdminModel;
 use Joomla\CMS\Router\Route;
 use Joomla\CMS\Table\Table;
 use Joomla\Component\Localise\Administrator\Helper\LocaliseHelper;
+use Joomla\Component\Localise\Administrator\Helper\InstalledExtensionLanguages;
+use Joomla\Component\Localise\Administrator\Helper\PackageExportSnapshot;
 use Joomla\CMS\Object\CMSObject;
 
 /**
@@ -59,7 +60,7 @@ class PackageFileModel extends AdminModel
 		$name = $app->getUserState('com_localise.packagefile.name');
 		$this->setState('packagefile.name', $name);
 
-		$id = $app->getUserState('com_localise.edit.packagefile.id');
+		$id = $app->input->getInt('id', 0);
 		$this->setState('packagefile.id', $id);
 	}
 
@@ -197,7 +198,7 @@ class PackageFileModel extends AdminModel
 			$package->setProperties($table->getProperties());
 
 			// Get the manifest
-			$xml = simplexml_load_file($table->path);
+			$xml = LocaliseHelper::loadPackageDefinition($table->path);
 
 			if ($xml)
 			{
@@ -224,6 +225,8 @@ class PackageFileModel extends AdminModel
 				$package->packversion   = (string) $xml->packversion;
 				$package->description   = (string) $xml->description;
 				$package->language      = (string) $xml->language;
+				$package->installedsource = (string) $xml->installedsource;
+				$package->sourcefiles = self::readSourceFiles($xml);
 				$package->license       = (string) $xml->license;
 				$package->copyright     = (string) $xml->copyright;
 				$package->author        = (string) $xml->author;
@@ -361,11 +364,8 @@ class PackageFileModel extends AdminModel
 	{
 		// When editing a package, find the original path
 		$app = Factory::getApplication('administrator');
-		$originalId = $app->getUserState('com_localise.edit.packagefile.id');
+		$originalId = (int) $this->getState('packagefile.id');
 		$oldpath = null;
-
-		$originalId = is_array($originalId) && count($originalId) > 0 ?
-						$originalId[0] : $originalId;
 
 		if (!empty($originalId))
 		{
@@ -401,7 +401,8 @@ class PackageFileModel extends AdminModel
 
 			// Add main package information
 			$titleElement = $dom->createElement('title', $title);
-			$descriptionElement = $dom->createElement('description', $description);
+			$descriptionElement = $dom->createElement('description');
+			$descriptionElement->appendChild($dom->createTextNode($description));
 			$manifestElement = $dom->createElement('manifest', $manifest);
 			$versionElement = $dom->createElement('version', $data['version']);
 			$packversionElement = $dom->createElement('packversion', $data['packversion']);
@@ -441,6 +442,36 @@ class PackageFileModel extends AdminModel
 			$packageXml->appendChild($packagerUrlElement);
 			$packageXml->appendChild($servernameElement);
 			$packageXml->appendChild($serverurlElement);
+
+			$source = (string) ($data['installedsource'] ?? $package->installedsource ?? '');
+
+			if ($source !== '')
+			{
+				$sourceId = InstalledExtensionLanguages::getSourceId($source);
+				$sameSource = $source === ($package->installedsource ?? '') && $data['language'] === ($package->language ?? '');
+				$checked = json_decode($data['checkedsourcefiles'] ?? '', true);
+				$files = $sameSource ? ($package->sourcefiles ?? []) : [];
+
+				if ($sourceId && ($checked['source'] ?? '') === $source && ($checked['language'] ?? '') === $data['language'])
+				{
+					$files = self::validFileOptions($checked['files'] ?? []);
+				}
+				elseif ($sourceId && !$sameSource)
+				{
+					$files = InstalledExtensionLanguages::getSuggestions($sourceId, $data['language']);
+				}
+
+				if ($sameSource || $sourceId)
+				{
+					$packageXml->appendChild($dom->createElement('installedsource'))->appendChild($dom->createTextNode($source));
+					$sourceFiles = $packageXml->appendChild($dom->createElement('sourcefiles'));
+
+					foreach ($files as $file)
+					{
+						$sourceFiles->appendChild($dom->createElement('file', $file));
+					}
+				}
+			}
 
 			$administrator = array();
 			$site          = array();
@@ -499,7 +530,7 @@ class PackageFileModel extends AdminModel
 			$ftp = ClientHelper::getCredentials('ftp');
 
 			// Try to make the file writeable.
-			if (File::exists($path) && !$ftp['enabled'] && PATH::isOwner($path) && !\JPATH::setPermissions($path, '0644'))
+			if (is_file($path) && !$ftp['enabled'] && Path::isOwner($path) && !Path::setPermissions($path, '0644'))
 			{
 				$this->setError(Text::sprintf('COM_LOCALISE_ERROR_PACKAGE_WRITABLE', $path));
 
@@ -513,7 +544,7 @@ class PackageFileModel extends AdminModel
 			$return = File::write($path, $formattedXML);
 
 			// Try to make the file unwriteable.
-			if (!$ftp['enabled'] && PATH::isOwner($path) && !PATH::setPermissions($path, '0444'))
+			if (!$ftp['enabled'] && Path::isOwner($path) && !Path::setPermissions($path, '0444'))
 			{
 				$this->setError(Text::sprintf('COM_LOCALISE_ERROR_PACKAGE_UNWRITABLE', $path));
 
@@ -599,7 +630,6 @@ class PackageFileModel extends AdminModel
 
 			$id = LocaliseHelper::getFileId($path);
 			$this->setState('packagefile.id', $id);
-			$app->setUserState('com_localise.edit.packagefile.id', $id);
 		}
 
 		if (isset($data['rules']))
@@ -631,6 +661,8 @@ class PackageFileModel extends AdminModel
 			{
 				$app->enqueueMessage(Text::_('COM_LOCALISE_ERROR_OLDFILE_REMOVE'), 'notice');
 			}
+
+			PackageExportSnapshot::move($originalId, $id);
 
 			$task = Factory::getApplication()->input->get('task');
 
@@ -671,203 +703,101 @@ class PackageFileModel extends AdminModel
 			return false;
 		}
 
-		$administrator = array();
-		$site          = array();
-		$msg           = null;
+		$archiveFilename = $data['archive_filename'] ?? '';
+		$useTemplate = ($data['standard_archive'] ?? '') === '1';
+		$error = null;
 
-		// Delete old files
-		$delete = Folder::files(JPATH_ROOT . '/tmp/', 'com_localise_', false, true);
-
-		if (!empty($delete))
+		if ($useTemplate)
 		{
-			if (!File::delete($delete))
+			if (!preg_match('/^[0-9]+\.[0-9]+\.[0-9]+$/D', $data['version'] ?? '')
+				|| !preg_match('/^[0-9]+$/D', $data['packversion'] ?? ''))
 			{
-				// File::delete throws an error
-				$this->setError(Text::_('COM_LOCALISE_ERROR_EXPORT_ZIPDELETE'));
-
-				return false;
+				$error = 'COM_LOCALISE_PACKAGE_VERSION_INVALID';
+			}
+			else
+			{
+				$archiveFilename = strtr(PackageModel::CORE_ARCHIVE_NAME, [
+					'{language}' => $data['language'],
+					'{version}' => $data['version'],
+					'{revision}' => $data['packversion'],
+				]);
 			}
 		}
-
-		foreach ($data['translations'] as $translation)
+		elseif ($archiveFilename === '')
 		{
-			if (preg_match('/^site_(.*)$/', $translation, $matches))
-			{
-				$site[] = $matches[1];
-			}
-
-			if (preg_match('/^administrator_(.*)$/', $translation, $matches))
-			{
-				$administrator[] = $matches[1];
-			}
+			$archiveFilename = $data['name'] . '_' . $data['language'] . '_' . $data['version'] . 'v' . $data['packversion'] . '.zip';
 		}
+		elseif (!is_string($archiveFilename) || !preg_match('/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,249}\.zip$/D', $archiveFilename))
+		{
+			$error = 'COM_LOCALISE_CUSTOM_ARCHIVE_INVALID';
+		}
+
+		if ($error !== null)
+		{
+			$app->getLanguage()->load('com_localise_picker', JPATH_COMPONENT_ADMINISTRATOR);
+			$app->enqueueMessage(Text::_($error), 'warning');
+			$app->redirect(Route::_('index.php?option=com_localise&view=packagefile&layout=edit&id=' . $this->getState('packagefile.id'), false));
+
+			return false;
+		}
+
+		[$groups, $missing, $hashes] = $this->collectExportFiles($data);
+
+		if ($missing)
+		{
+			$msg = '';
+			foreach ($missing as $file)
+			{
+				$msg .= Text::sprintf('COM_LOCALISE_FILE_NOT_TRANSLATED', $file['name'], Text::_($file['client'] === 'site' ? 'JSITE' : 'JADMINISTRATOR'));
+			}
+			$app->enqueueMessage($msg . '<p>...</p>' . Text::_('COM_LOCALISE_UNTRANSLATED'), 'error');
+			$app->redirect(Route::_('index.php?option=com_localise&view=packagefile&layout=edit&id=' . $this->getState('packagefile.id'), false));
+
+			return false;
+		}
+
+		$main_package_files = [];
 
 		$parts = explode('.', $data['version']);
 		$small_version = implode('.', array($parts[0],$parts[1]));
+
+		$escapeXml = static function ($value) {
+			return htmlspecialchars((string) $value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+		};
 
 		// Prepare text to save for the xml package description
 		$text = '';
 		$text .= '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 		$text .= '<extension type="file" version="' . $small_version . '" method="upgrade">' . "\n";
-		$text .= "\t" . '<name>' . $data['name'] . $data['language'] . '</name>' . "\n";
+		$text .= "\t" . '<name>' . $escapeXml($data['name']) . $data['language'] . '</name>' . "\n";
 		$text .= "\t" . '<version>' . $data['version'] . (!empty($data['packversion']) ? '.' . $data['packversion'] : '') . '</version>' . "\n";
 		$text .= "\t" . '<creationDate>' . date('d/m/Y') . '</creationDate>' . "\n";
-		$text .= "\t" . '<author>' . $data['author'] . '</author>' . "\n";
-		$text .= "\t" . '<authorEmail>' . $data['authoremail'] . '</authorEmail>' . "\n";
-		$text .= "\t" . '<authorUrl>' . $data['authorurl'] . '</authorUrl>' . "\n";
-		$text .= "\t" . '<copyright>' . $data['copyright'] . '</copyright>' . "\n";
-		$text .= "\t" . '<license>' . $data['license'] . '</license>' . "\n";
-		$text .= "\t" . '<packager>' . $data['packager'] . '</packager>' . "\n";
-		$text .= "\t" . '<packagerurl>' . $data['packagerurl'] . '</packagerurl>' . "\n";
-		$text .= "\t" . '<description><![CDATA[' . $data['description'] . ']]></description>' . "\n";
+		$text .= "\t" . '<author>' . $escapeXml($data['author']) . '</author>' . "\n";
+		$text .= "\t" . '<authorEmail>' . $escapeXml($data['authoremail']) . '</authorEmail>' . "\n";
+		$text .= "\t" . '<authorUrl>' . $escapeXml($data['authorurl']) . '</authorUrl>' . "\n";
+		$text .= "\t" . '<copyright>' . $escapeXml($data['copyright']) . '</copyright>' . "\n";
+		$text .= "\t" . '<license>' . $escapeXml($data['license']) . '</license>' . "\n";
+		$text .= "\t" . '<packager>' . $escapeXml($data['packager']) . '</packager>' . "\n";
+		$text .= "\t" . '<packagerurl>' . $escapeXml($data['packagerurl']) . '</packagerurl>' . "\n";
+		$description = str_replace(']]>', ']]]]><![CDATA[>', $data['description'] ?? '');
+		$text .= "\t" . '<description><![CDATA[' . $description . ']]></description>' . "\n";
 		$text .= "\t" . '<fileset>' . "\n";
 
-		if (count($site))
+		foreach ($groups as $group)
 		{
-			$text .= "\t\t" . '<files ';
-			$text .= 'folder="site/' . $data['language'] . '"';
-			$text .= ' target="language/' . $data['language'] . '">' . "\n";
-			$site_package_files = array();
-
-			// $site_package_zip_path = JPATH_ROOT . '/tmp/' . uniqid('com_localise_') . '.zip';
-
-			foreach ($site as $translation)
+			if (!$group['files'])
 			{
-				$path = LocaliseHelper::findTranslationPath($client = 'site', $tag = $data['language'], $filename = $translation);
-
-				if (File::exists($path))
-				{
-					$file_data = file_get_contents($path);
-				}
-
-				if (File::exists($path) && !empty($file_data))
-				{
-					$text .= "\t\t\t" . '<filename>' . $translation . '.ini</filename>' . "\n";
-					$site_package_files[] = array('name' => $translation . '.ini','data' => $file_data);
-				}
-				else
-				{
-					$msg .= Text::sprintf('COM_LOCALISE_FILE_NOT_TRANSLATED', $translation . '.ini', Text::_('JSITE'));
-				}
+				continue;
 			}
 
-			/**
-			$site_txt .= "\t\t".'<filename file="meta">install.xml</filename>' . "\n";
-			$site_txt .= "\t\t".'<filename file="meta">' . $data['language'] . '.xml</filename>' . "\n";
-			$site_txt .= "\t".'</files>' . "\n";
-			$site_txt .= "\t".'<params />' . "\n";
-			$site_txt .= "\t".'</extension>' . "\n";
-			$site_package_files[] = array('name'=>'install.xml','data'=>$site_txt);
-			$language_data = file_get_contents(JPATH_ROOT . '/language/' . $data['language'] . '/' . $data['language'] . '.xml');
-			$site_package_files[] = array('name' => $data['language'] . '.xml','data'=>$language_data);
-			$language_data = file_get_contents(JPATH_ROOT . '/language/' . $data['language'] . '/' . $data['language'] . '.localise.php');
-			$site_package_files[] = array('name' => $data['language'] . '.localise.php','data' => $language_data);
-
-			$site_zip_path = JPATH_ROOT . '/tmp/' . uniqid('com_localise_') . '.zip';
-			if (!$packager = Archive::getAdapter('zip'))
+			$text .= "\t\t" . '<files folder="' . $escapeXml($group['folder'])
+				. '" target="' . $escapeXml($group['target']) . '">' . "\n";
+			foreach ($group['files'] as $file)
 			{
-				$this->setError(Text::_('COM_LOCALISE_ERROR_EXPORT_ADAPTER'));
-
-				return false;
+				$text .= "\t\t\t" . '<filename>' . $escapeXml($file['name']) . '</filename>' . "\n";
+				$main_package_files[] = ['name' => $group['folder'] . '/' . $file['name'], 'data' => $file['data']];
 			}
-			else
-			{
-				if (!$packager->create($site_zip_path, $site_package_files))
-				{
-					$this->setError(Text::_('COM_LOCALISE_ERROR_EXPORT_ZIPCREATE'));
-
-					return false;
-				}
-			}
-			*/
-
 			$text .= "\t\t" . '</files>' . "\n";
-
-			if ($msg)
-			{
-				$msg .= '<p>...</p>';
-			}
-
-			foreach ($site_package_files as $file)
-			{
-				$main_package_files[] = array('name' => 'site/' . $data['language'] . '/' . $file['name'], 'data' => $file['data']);
-			}
-		}
-
-		if (count($administrator))
-		{
-			$text .= "\t\t" . '<files ';
-			$text .= 'folder="admin/' . $data['language'] . '"';
-			$text .= ' target="administrator/language/' . $data['language'] . '">' . "\n";
-
-			$admin_package_files = array();
-
-			foreach ($administrator as $translation)
-			{
-				$path = LocaliseHelper::findTranslationPath($client = 'administrator', $tag = $data['language'], $filename = $translation);
-
-				if (\JFile::exists($path))
-				{
-					$file_data = file_get_contents($path);
-				}
-
-				if (\JFile::exists($path) && !empty($file_data))
-				{
-					$text .= "\t\t\t" . '<filename>' . $translation . '.ini</filename>' . "\n";
-					$admin_package_files[] = array('name' => $translation . '.ini','data' => $file_data);
-				}
-				else
-				{
-					$msg .= Text::sprintf('COM_LOCALISE_FILE_NOT_TRANSLATED', $translation . '.ini', Text::_('JADMINISTRATOR'));
-				}
-			}
-
-			/**
-			$admin_txt .= "\t\t".'<filename file="meta">install.xml</filename>' . "\n";
-			$admin_txt .= "\t\t".'<filename file="meta">' . $data['language'].'.xml</filename>' . "\n";
-			$admin_txt .= "\t".'</files>' . "\n";
-			$admin_txt .= "\t".'<params />' . "\n";
-			$admin_txt .= "\t".'</extension>' . "\n";
-			$admin_package_files[] = array('name'=>'install.xml','data'=>$admin_txt);
-			$language_data = file_get_contents(JPATH_ROOT . '/administrator/language/' . $data['language'] . '/' . $data['language'] . '.xml');
-			$admin_package_files[] = array('name'=>$data['language'] . '.xml','data' => $language_data);
-			$language_data = file_get_contents(JPATH_ROOT . '/administrator/language/' . $data['language'] . '/' . $data['language'] . '.localise.php');
-			$admin_package_files[] = array('name'=>$data['language'] . '.localise.php','data' => $language_data);
-
-
-			$admin_zip_path = JPATH_ROOT . '/tmp/' . uniqid('com_localise_') . '.zip';
-			if (!$packager = Archive::getAdapter('zip'))
-			{
-				$this->setError(Text::_('COM_LOCALISE_ERROR_EXPORT_ADAPTER'));
-
-				return false;
-			}
-			else
-			{
-				if (!$packager->create($admin_zip_path, $admin_package_files))
-				{
-					$this->setError(Text::_('COM_LOCALISE_ERROR_EXPORT_ZIPCREATE'));
-
-					return false;
-				}
-			}
-			*/
-			$text .= "\t\t" . '</files>' . "\n";
-
-			foreach ($admin_package_files as $file)
-			{
-				$main_package_files[] = array('name' => 'admin/' . $data['language'] . '/' . $file['name'], 'data' => $file['data']);
-			}
-		}
-
-		if ($msg)
-		{
-			$msg .= '<p>...</p>';
-			$msg .= Text::_('COM_LOCALISE_UNTRANSLATED');
-			$app->enqueueMessage($msg, 'error');
-			$app->redirect(Route::_('index.php?option=com_localise&view=packagefile&layout=edit&id=' . $this->getState('packagefile.id'), false));
-
-			return false;
 		}
 
 		$text .= "\t" . '</fileset>' . "\n";
@@ -875,7 +805,7 @@ class PackageFileModel extends AdminModel
 		if (!empty($data['serverurl']))
 		{
 			$text .= "\t" . '<updateservers>' . "\n";
-			$text .= "\t\t" . '<server type="collection" priority="1" name="' . $data['servername'] . '">' . $data['serverurl'] . '</server>' . "\n";
+			$text .= "\t\t" . '<server type="collection" priority="1" name="' . $escapeXml($data['servername']) . '">' . $escapeXml($data['serverurl']) . '</server>' . "\n";
 			$text .= "\t" . '</updateservers>' . "\n";
 		}
 
@@ -883,7 +813,7 @@ class PackageFileModel extends AdminModel
 
 		$main_package_files[] = array('name' => $data['name'] . $data['language'] . '.xml', 'data' => $text);
 
-		$ziproot = JPATH_ROOT . '/tmp/' . uniqid('com_localise_main_') . '.zip';
+		$ziproot = JPATH_ROOT . '/tmp/' . uniqid('localise_packagefile_', true) . '.zip';
 
 		// Run the packager
 
@@ -899,19 +829,46 @@ class PackageFileModel extends AdminModel
 		{
 			if (!$packager->create($ziproot, $main_package_files))
 			{
+				if (is_file($ziproot))
+				{
+					@unlink($ziproot);
+				}
+
 				$this->setError(Text::_('COM_LOCALISE_ERROR_EXPORT_ZIPCREATE'));
 
 				return false;
 			}
 		}
 
-		ob_clean();
 		$zipdata = file_get_contents($ziproot);
+		@unlink($ziproot);
+
+		if ($zipdata === false)
+		{
+			$this->setError(Text::_('COM_LOCALISE_ERROR_EXPORT_ZIPCREATE'));
+
+			return false;
+		}
+
+		$id = $app->input->getInt('id');
+		$packagePath = $id ? LocaliseHelper::getFilePath($id) : '';
+
+		if ($packagePath && $app->getIdentity()->authorise('localise.edit', 'com_localise.' . $id))
+		{
+			$package = LocaliseHelper::loadPackageDefinition($packagePath);
+
+			if ($package && (string) $package->language === $data['language'] && !PackageExportSnapshot::record($id, $data['language'], $hashes))
+			{
+				$app->getLanguage()->load('com_localise_picker', JPATH_COMPONENT_ADMINISTRATOR);
+				$app->enqueueMessage(Text::_('COM_LOCALISE_EXPORT_SNAPSHOT_FAILED'), 'warning');
+			}
+		}
+
+		ob_clean();
 		header("Expires: 0");
 		header("Last-Modified: " . gmdate("D, d M Y H:i:s") . " GMT");
 		header('Content-Type: application/zip');
-		header('Content-Disposition: attachment; filename="'
-				. $data['name'] . '_' . $data['language'] . '_' . $data['version'] . 'v' . $data['packversion'] . '.zip"');
+		header('Content-Disposition: attachment; filename="' . $archiveFilename . '"');
 		header('Content-Length: ' . strlen($zipdata));
 		header("Cache-Control: maxage=1");
 		header("Pragma: public");
@@ -927,104 +884,187 @@ class PackageFileModel extends AdminModel
 	 */
 	public function updateTranslationsList($data)
 	{
-		// Ready to enqueue message if required
-		$app = Factory::getApplication();
-
-		// Sample
-		//$app->enqueueMessage(Text::_('Fake test returning false from updateTranslationsList function at packagefile model'), 'warning');
-		//return false;
-
-		// Getting params
+		Factory::getApplication()->getLanguage()->load('com_localise_picker', JPATH_COMPONENT_ADMINISTRATOR);
 		$params = ComponentHelper::getParams('com_localise');
-		$reftag = $params->get('reference', '');
+		$reftag = $params->get('reference') ?: 'en-GB';
+		$langtag = (string) ($data[0]->languagetag ?? '');
 
-		if (empty($reftag))
+		$id = (int) ($data[0]->packageid ?? 0);
+		$path = $id ? LocaliseHelper::getFilePath($id) : '';
+		$packageDirectories = [
+			JPATH_COMPONENT_ADMINISTRATOR . '/packages',
+			JPATH_SITE . '/media/com_localise/packages',
+		];
+
+		if (!in_array(dirname($path), $packageDirectories, true))
 		{
-			$reftag = 'en-GB';
+			$path = '';
 		}
 
-		// Getting the data from ajax call
-		$packagename = htmlspecialchars($data[0]->packagename);
-		$langtag     = htmlspecialchars($data[0]->languagetag);
+		// Keep the original lookup for callers that do not send a record ID.
+		$name = (string) ($data[0]->packagename ?? '');
 
-		// Initiating form instance
-		$filepath     = JPATH_ADMINISTRATOR . "/components/com_localise/forms/packagefile.xml";
-		$form_package = Form::getInstance("packagefile", $filepath, array("control" => "jform"));
+		if (!$id && $name !== '' && File::makeSafe($name) === $name && basename($name) === $name)
+		{
+			$path = $packageDirectories[0] . '/' . $name . '.xml';
+		}
 
-		//Form::addFieldPath(JPATH_ADMINISTRATOR . '/components/com_localise/Field');
-		//Form::addFormPath(JPATH_ADMINISTRATOR . '/components/com_localise/forms');
+		$xml = LocaliseHelper::loadPackageDefinition($path, $langtag);
+		$selected = [];
 
-		// Adding the params below at required fields only when Ajax call.
-		$form_package->setFieldAttribute($name = 'translations', 'reftag', $reftag);
-		$form_package->setFieldAttribute($name = 'translations', 'langtag', $langtag);
+		foreach (['site', 'administrator'] as $client)
+		{
+			if ($xml && $xml->{$client})
+			{
+				foreach ($xml->{$client}->children() as $file)
+				{
+					$selected[] = $client . '_' . substr((string) $file, 0, -4);
+				}
+			}
+		}
 
+		$form = Form::getInstance(
+			'packagefile',
+			JPATH_COMPONENT_ADMINISTRATOR . '/forms/packagefile.xml',
+			['control' => 'jform']
+		);
+		$form->setFieldAttribute('translations', 'reftag', $reftag);
+		$form->setFieldAttribute('translations', 'langtag', $langtag);
+		$source = (string) ($data[0]->installedextension ?? '');
+		$sourceId = InstalledExtensionLanguages::getSourceId($source);
 		$html_output = new CMSObject;
-		$html_output->translations = $form_package->renderField('translations');
 
-		// The highligthted cases to set as "selected" getting it from the package xml file, if the package filename exists.
-		$xml     = false;
-		$xmlpath = JPATH_ADMINISTRATOR . '/components/com_localise/packages/' . $packagename . '.xml';
-
-		if (!empty($packagename) && File::exists($xmlpath))
+		if ($sourceId)
 		{
-			$xml = simplexml_load_file($xmlpath);
+			$current = InstalledExtensionLanguages::getSuggestions($sourceId, $langtag);
+			$sameSource = $xml && (string) $xml->language === $langtag && (string) $xml->installedsource === $source;
+			$review = !empty($data[0]->review) || $sameSource;
+			$known = $sameSource ? self::readSourceFiles($xml) : $current;
+			$missing = $review ? array_values(array_diff($known, $current)) : [];
+			$new = $review ? array_values(array_diff($current, $known)) : [];
+
+			$selected = $review ? self::validFileOptions($data[0]->selected ?? []) : $current;
+			$changed = $review && $id && $xml && (string) $xml->language === $langtag
+				? PackageExportSnapshot::getChangedFiles($id, $langtag, $selected) : null;
+			$visible = array_values(array_unique(array_merge($current, $missing, $selected)));
+			$form->setFieldAttribute('translations', 'suggestedfiles', json_encode($visible));
+			$form->setFieldAttribute('translations', 'newfiles', json_encode($new));
+			$form->setFieldAttribute('translations', 'missingfiles', json_encode($missing));
+			$form->setFieldAttribute('translations', 'changedfiles', json_encode($changed ?? []));
+			$html_output->fileChanges = $review ? [
+				'new' => count($new),
+				'missing' => count($missing),
+				'changed' => $changed === null ? null : count($changed),
+			] : null;
+			$html_output->sourceFiles = ['source' => $source, 'language' => $langtag, 'files' => $current];
+		}
+		elseif ($source !== '')
+		{
+			$html_output->sourceUnavailable = true;
+
+			return $html_output;
 		}
 
-		if ($xml)
-		{
-			$lines = preg_split("/\\r\\n|\\r|\\n/", $html_output->translations);
+		$form->setValue('translations', null, $selected);
 
-			if ($xml->administrator)
-			{
-				foreach ($xml->administrator->children() as $file)
-				{
-					$key    = substr($file, 0, strlen($file) - 4);
-					$string = preg_quote('value="administrator_' . $key . '"');
-
-					foreach ($lines as $index => $line)
-					{
-						if (!empty($line))
-						{
-							if (preg_match("/^(.*)$string(.*)$/", $line, $matches) && !preg_match("/^(.*)disabled(.*)$/", $line, $matches))
-							{
-								$content       = 'value="administrator_' . $key .'"';
-								$newcontent    = 'value="administrator_' . $key .'" selected="selected" ';
-								$lines[$index] = str_replace($content, $newcontent, $line);
-
-								break;
-							}
-						}
-					}
-				}
-			}
-
-			if ($xml->site)
-			{
-				foreach ($xml->site->children() as $file)
-				{
-					$key    = substr($file, 0, strlen($file) - 4);
-					$string = preg_quote('value="site_' . $key . '"');
-
-					foreach ($lines as $index => $line)
-					{
-						if (!empty($line))
-						{
-							if (preg_match("/^(.*)$string(.*)$/", $line, $matches) && !preg_match("/^(.*)disabled(.*)$/", $line, $matches))
-							{
-								$content       = 'value="site_' . $key .'"';
-								$newcontent    = 'value="site_' . $key .'" selected="selected" ';
-								$lines[$index] = str_replace($content, $newcontent, $line);
-
-								break;
-							}
-						}
-					}
-				}
-			}
-
-			$html_output->translations = implode($lines);
-		}
+		$html_output->translations = $form->renderField('translations');
 
 		return $html_output;
+	}
+
+	public function checkExportStatus(object $package, array $snapshot): string
+	{
+		[, $missing, $hashes] = $this->collectExportFiles([
+			'language' => $package->language,
+			'translations' => $package->translations,
+		]);
+
+		if ($missing || array_diff_assoc($hashes, $snapshot['hashes']) || array_diff_key($snapshot['hashes'], $hashes))
+		{
+			return 'CHANGED';
+		}
+
+		if ($package->installedsource !== '')
+		{
+			$sourceId = InstalledExtensionLanguages::getSourceId($package->installedsource);
+			if (!$sourceId)
+			{
+				return 'SOURCE_UNAVAILABLE';
+			}
+
+			$current = InstalledExtensionLanguages::getSuggestions($sourceId, $package->language);
+			if (array_diff($current, $package->sourcefiles) || array_diff($package->sourcefiles, $current))
+			{
+				return 'CHANGED';
+			}
+		}
+
+		return 'UNCHANGED';
+	}
+
+	public function previewExport(array $data, int $id): array
+	{
+		[$groups, $missing, $hashes] = $this->collectExportFiles($data);
+		$changed = $id ? PackageExportSnapshot::getChangedFiles($id, $data['language'], array_keys($hashes), $hashes) : null;
+		$files = [];
+		foreach ($groups as $client => $group)
+		{
+			foreach ($group['files'] as $file)
+			{
+				$files[$client][] = [
+					'archive' => $group['folder'] . '/' . $file['name'],
+					'target' => $group['target'] . '/' . $file['name'],
+					'changed' => in_array($file['option'], $changed ?? [], true),
+				];
+			}
+		}
+
+		return ['files' => $files, 'missing' => $missing, 'hasBaseline' => $changed !== null];
+	}
+
+	private function collectExportFiles(array $data): array
+	{
+		$tag = $data['language'];
+		$groups = [
+			'site' => ['folder' => 'site/' . $tag, 'target' => 'language/' . $tag, 'files' => []],
+			'administrator' => ['folder' => 'admin/' . $tag, 'target' => 'administrator/language/' . $tag, 'files' => []],
+		];
+		$missing = [];
+		$hashes = [];
+
+		foreach (self::validFileOptions($data['translations'] ?? []) as $option)
+		{
+			[$client, $translation] = explode('_', $option, 2);
+			if (!isset($groups[$client]))
+			{
+				continue;
+			}
+
+			$name = $translation . '.ini';
+			$path = LocaliseHelper::findTranslationPath($client, $tag, $translation);
+			$content = is_file($path) ? file_get_contents($path) : false;
+			if (empty($content))
+			{
+				$missing[] = ['client' => $client, 'name' => $name, 'option' => $option];
+				continue;
+			}
+
+			$groups[$client]['files'][] = ['name' => $name, 'data' => $content, 'option' => $option];
+			$hashes[$option] = hash('sha256', $content);
+		}
+
+		return [$groups, $missing, $hashes];
+	}
+
+	private static function validFileOptions($files): array
+	{
+		return array_values(array_unique(array_filter((array) $files, static function ($file) {
+			return is_string($file) && preg_match('/^(?:site|administrator)_[a-z0-9_][a-z0-9._-]*$/iD', $file);
+		})));
+	}
+
+	private static function readSourceFiles(\SimpleXMLElement $xml): array
+	{
+		return self::validFileOptions(array_map('strval', $xml->xpath('sourcefiles/file')));
 	}
 }
