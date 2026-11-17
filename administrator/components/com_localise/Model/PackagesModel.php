@@ -163,6 +163,11 @@ class PackagesModel extends ListModel
 						$model->setState("$context.id", $id);
 						$package = $model->getItem();
 
+						if ($package->name === 'core')
+						{
+							continue;
+						}
+
 						if (empty($search) || preg_match("/$search/i", $package->title))
 						{
 							$this->packages[] = $package;

@@ -17,81 +17,79 @@ use Joomla\CMS\Router\Route;
 $user = Factory::getUser();
 ?>
 <?php foreach($this->items as $i => $item) : ?>
-	<?php if ($item->name !== 'core') : ?>
-		<?php $canEdit = $user->authorise('localise.edit', 'com_localise.'.$item->id); ?>
-		<?php $title = $this->escape(Text::_($item->title)); ?>
-		<?php $name = $this->escape($item->name); ?>
-		<tr class="row<?php echo $i % 2; ?>">
-			<td width="20" class="center hidden-phone"><?php echo $i + 1; ?></td>
-			<td width="20" class="center hidden-phone">
-				<?php if ($item->checked_out) : ?>
-					<?php $canCheckin = $user->authorise('core.manage', 'com_checkin') || $item->checked_out == $user->get('id') || $item->checked_out == 0; ?>
-					<?php echo HTMLHelper::_('jgrid.checkedout', $i, $item->editor, $item->checked_out_time, 'packages.', $canCheckin); ?>
-					<input type="checkbox" id="cb<?php echo $i;?>" class="hidden" name="cid[]" value="<?php echo $item->id;?>">
-				<?php else:?>
-					<?php echo HTMLHelper::_('grid.id', $i, $item->id); ?>
-				<?php endif; ?>
-			</td>
-			<td>
-				<span title="<?php echo $title; ?>" class="hasTooltip localise-icon "></span>
-				<?php if (!$canEdit) : ?>
-					<span title="<?php echo Text::_('COM_LOCALISE_TOOLTIP_PACKAGES_READONLY'); ?>"  class="hasTooltip localise-icon icon-warning"></span>
-					<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', $title, $name); ?>
-				<?php elseif ($item->writable && $canEdit) : ?>
-					<span class="localise-icon">
-					<?php if ($item->core) : ?>
-						<a class="hasTooltip" href="<?php echo Route::_('index.php?option=com_localise&task=package.edit&id=' . $item->id); ?>" title="<?php echo Text::_('COM_LOCALISE_TOOLTIP_PACKAGES_EDIT'); ?>">
-						<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', $title, $name); ?>
-						</a>
-					<?php else: ?>
-						<a class="hasTooltip" href="<?php echo Route::_('index.php?option=com_localise&task=packagefile.edit&id=' . $item->id); ?>" title="<?php echo Text::_('COM_LOCALISE_TOOLTIP_PACKAGES_EDIT'); ?>">
-						<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', $title, $name); ?>
-						</a>
-					<?php endif; ?>
-					</span>
-				<?php else : ?>
-					<span title="<?php echo Text::sprintf($canEdit ? 'COM_LOCALISE_TOOLTIP_PACKAGES_NOTWRITABLE':'COM_LOCALISE_TOOLTIP_PACKAGES_NOTEDITABLE', substr($item->path, strlen(JPATH_ROOT) + 1)); ?>"  class="hasTooltip localise-icon icon-16-warning">
-						<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', $title, $name); ?>
-					</span>
-				<?php endif; ?>
-			</td>
-			<td>
-				<?php echo $this->escape($item->language); ?>
-			</td>
-			<td>
-				<?php echo $this->escape($item->version . (!empty($item->packversion) ? '.' . $item->packversion : '')); ?>
-			</td>
-			<td>
+	<?php $canEdit = $user->authorise('localise.edit', 'com_localise.'.$item->id); ?>
+	<?php $title = $this->escape(Text::_($item->title)); ?>
+	<?php $name = $this->escape($item->name); ?>
+	<tr class="row<?php echo $i % 2; ?>">
+		<td width="20" class="center hidden-phone"><?php echo $this->pagination->getRowOffset($i); ?></td>
+		<td width="20" class="center hidden-phone">
+			<?php if ($item->checked_out) : ?>
+				<?php $canCheckin = $user->authorise('core.manage', 'com_checkin') || $item->checked_out == $user->get('id') || $item->checked_out == 0; ?>
+				<?php echo HTMLHelper::_('jgrid.checkedout', $i, $item->editor, $item->checked_out_time, 'packages.', $canCheckin); ?>
+				<input type="checkbox" id="cb<?php echo $i;?>" class="hidden" name="cid[]" value="<?php echo $item->id;?>">
+			<?php else:?>
+				<?php echo HTMLHelper::_('grid.id', $i, $item->id); ?>
+			<?php endif; ?>
+		</td>
+		<td>
+			<span title="<?php echo $title; ?>" class="hasTooltip localise-icon "></span>
+			<?php if (!$canEdit) : ?>
+				<span title="<?php echo Text::_('COM_LOCALISE_TOOLTIP_PACKAGES_READONLY'); ?>"  class="hasTooltip localise-icon icon-warning"></span>
+				<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', $title, $name); ?>
+			<?php elseif ($item->writable && $canEdit) : ?>
+				<span class="localise-icon">
 				<?php if ($item->core) : ?>
-					<span class="fab fa-joomla"></span>
-					<?php echo Text::_('COM_LOCALISE_CORE'); ?>
+					<a class="hasTooltip" href="<?php echo Route::_('index.php?option=com_localise&task=package.edit&id=' . $item->id); ?>" title="<?php echo Text::_('COM_LOCALISE_TOOLTIP_PACKAGES_EDIT'); ?>">
+					<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', $title, $name); ?>
+					</a>
 				<?php else: ?>
-					<span class="fa fa-file"></span>
-					<?php echo Text::_('COM_LOCALISE_FILE'); ?>
+					<a class="hasTooltip" href="<?php echo Route::_('index.php?option=com_localise&task=packagefile.edit&id=' . $item->id); ?>" title="<?php echo Text::_('COM_LOCALISE_TOOLTIP_PACKAGES_EDIT'); ?>">
+					<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', $title, $name); ?>
+					</a>
 				<?php endif; ?>
-			</td>
-			<td>
-				<?php if ($status = $this->exportStatuses[$item->id] ?? null) : ?>
-					<div><?php echo Text::_('COM_LOCALISE_EXPORT_STATUS_' . $status['status']); ?></div>
-					<?php if ($status['exportedAt']) : ?>
-						<div class="small"><?php echo Text::sprintf('COM_LOCALISE_EXPORT_STATUS_EXPORTED', HTMLHelper::_('date', gmdate('Y-m-d H:i:s', $status['exportedAt']), Text::_('DATE_FORMAT_LC5'))); ?></div>
-					<?php endif; ?>
-					<?php if ($status['checkedAt']) : ?>
-						<div class="small"><?php echo Text::sprintf('COM_LOCALISE_EXPORT_STATUS_CHECKED', HTMLHelper::_('date', gmdate('Y-m-d H:i:s', $status['checkedAt']), Text::_('DATE_FORMAT_LC5'))); ?></div>
-					<?php endif; ?>
-					<?php if (($status['origin'] ?? null) === 'manual') : ?>
-						<div class="small"><?php echo Text::_('COM_LOCALISE_EXPORT_CHECK_MANUAL'); ?></div>
-					<?php elseif (($status['origin'] ?? null) === 'automatic') : ?>
-						<div class="small"><?php echo Text::sprintf('COM_LOCALISE_EXPORT_CHECK_AUTOMATIC', $this->escape($status['updatedExtension'])); ?></div>
-					<?php endif; ?>
-					<?php if ($status['status'] === 'CHANGED' && $canEdit && $item->writable) : ?>
-						<?php $hasSource = $status['hasSource']; ?>
-						<a href="<?php echo Route::_('index.php?option=com_localise&task=packagefile.edit&id=' . $item->id . ($hasSource ? '#localise-review-files' : '#localise-preview-export')); ?>">
-							<?php echo Text::_($hasSource ? 'COM_LOCALISE_REVIEW_FILE_CHANGES' : 'COM_LOCALISE_PREVIEW_EXPORT'); ?>
-						</a>
-					<?php endif; ?>
+				</span>
+			<?php else : ?>
+				<span title="<?php echo Text::sprintf($canEdit ? 'COM_LOCALISE_TOOLTIP_PACKAGES_NOTWRITABLE':'COM_LOCALISE_TOOLTIP_PACKAGES_NOTEDITABLE', substr($item->path, strlen(JPATH_ROOT) + 1)); ?>"  class="hasTooltip localise-icon icon-16-warning">
+					<?php echo Text::sprintf('COM_LOCALISE_TEXT_PACKAGES_TITLE', $title, $name); ?>
+				</span>
+			<?php endif; ?>
+		</td>
+		<td>
+			<?php echo $this->escape($item->language); ?>
+		</td>
+		<td>
+			<?php echo $this->escape($item->version . (!empty($item->packversion) ? '.' . $item->packversion : '')); ?>
+		</td>
+		<td>
+			<?php if ($item->core) : ?>
+				<span class="fab fa-joomla"></span>
+				<?php echo Text::_('COM_LOCALISE_CORE'); ?>
+			<?php else: ?>
+				<span class="fa fa-file"></span>
+				<?php echo Text::_('COM_LOCALISE_FILE'); ?>
+			<?php endif; ?>
+		</td>
+		<td>
+			<?php if ($status = $this->exportStatuses[$item->id] ?? null) : ?>
+				<div><?php echo Text::_('COM_LOCALISE_EXPORT_STATUS_' . $status['status']); ?></div>
+				<?php if ($status['exportedAt']) : ?>
+					<div class="small"><?php echo Text::sprintf('COM_LOCALISE_EXPORT_STATUS_EXPORTED', HTMLHelper::_('date', gmdate('Y-m-d H:i:s', $status['exportedAt']), Text::_('DATE_FORMAT_LC5'))); ?></div>
 				<?php endif; ?>
-			</td>
-		</tr>
-	<?php endif; ?>
+				<?php if ($status['checkedAt']) : ?>
+					<div class="small"><?php echo Text::sprintf('COM_LOCALISE_EXPORT_STATUS_CHECKED', HTMLHelper::_('date', gmdate('Y-m-d H:i:s', $status['checkedAt']), Text::_('DATE_FORMAT_LC5'))); ?></div>
+				<?php endif; ?>
+				<?php if (($status['origin'] ?? null) === 'manual') : ?>
+					<div class="small"><?php echo Text::_('COM_LOCALISE_EXPORT_CHECK_MANUAL'); ?></div>
+				<?php elseif (($status['origin'] ?? null) === 'automatic') : ?>
+					<div class="small"><?php echo Text::sprintf('COM_LOCALISE_EXPORT_CHECK_AUTOMATIC', $this->escape($status['updatedExtension'])); ?></div>
+				<?php endif; ?>
+				<?php if ($status['status'] === 'CHANGED' && $canEdit && $item->writable) : ?>
+					<?php $hasSource = $status['hasSource']; ?>
+					<a href="<?php echo Route::_('index.php?option=com_localise&task=packagefile.edit&id=' . $item->id . ($hasSource ? '#localise-review-files' : '#localise-preview-export')); ?>">
+						<?php echo Text::_($hasSource ? 'COM_LOCALISE_REVIEW_FILE_CHANGES' : 'COM_LOCALISE_PREVIEW_EXPORT'); ?>
+					</a>
+				<?php endif; ?>
+			<?php endif; ?>
+		</td>
+	</tr>
 <?php endforeach; ?>

@@ -2,7 +2,7 @@
 <extension type="package" method="upgrade">
 	<name>Localise Studio</name>
 	<packagename>localisestudio</packagename>
-	<version>6.1.0</version>
+	<version>6.1.1</version>
 	<description>Localise Studio and its automatic language package file check plugin.</description>
 	<files folder="packages">
 		<file type="component" id="com_localise">com_localise.zip</file>
