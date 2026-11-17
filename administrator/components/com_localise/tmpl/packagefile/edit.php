@@ -78,6 +78,7 @@ function updateTranslationsList(review) {
 										}]);
 	checkButton.prop('disabled', true);
 	jQuery('#localise-extension-file-status').text('');
+	jQuery('#localise-review-files').trigger('localise:reviewReset');
 	jQuery.post('index.php',{
 		'option'     : 'com_localise',
 		'controller' : 'packagefile',
@@ -131,6 +132,10 @@ function updateTranslationsList(review) {
 						var fileCount = updated.find('option:selected').length;
 						jQuery('#jform_translations').empty().append(updated.children());
 						jQuery('#jform_checkedsourcefiles').val(reply.data.sourceFiles ? JSON.stringify(reply.data.sourceFiles) : '');
+						if (review && window.location.hash === '#localise-review-files')
+						{
+							jQuery('#localise-review-files').trigger('localise:reviewReady', [reply.data.reviewFiles || []]);
+						}
 						if (source && languagetag)
 						{
 							var changes = reply.data.fileChanges;
@@ -286,6 +291,14 @@ jQuery(document).ready(function() {
 									<?php echo Text::_('COM_LOCALISE_PREVIEW_EXPORT'); ?>
 								</button>
 								<section id="localise-export-preview" aria-live="polite" hidden></section>
+								<section id="localise-review-files" hidden>
+									<h3 class="h5"><?php echo Text::_('COM_LOCALISE_REVIEW_FILE_CHANGES'); ?></h3>
+									<p data-review-empty hidden><?php echo Text::_('COM_LOCALISE_EXPORT_STATUS_UNCHANGED'); ?></p>
+									<div data-review-list></div>
+									<button type="button" class="btn btn-outline-secondary mb-2" data-review-exit>
+										<?php echo Text::_('COM_LOCALISE_REVIEW_ALL_FILES'); ?>
+									</button>
+								</section>
 								<p id="localise-extension-file-status" role="status"></p>
 								<?php if (!empty($fieldSets['translations']->description)):?>
 										<p><?php echo Text::_($fieldSets['translations']->description); ?></p>
@@ -396,5 +409,57 @@ jQuery(document).ready(function() {
 		}
 	});
 	if (window.location.hash === '#localise-preview-export') button.click();
+
+	const review = document.getElementById('localise-review-files');
+	const list = review.querySelector('[data-review-list]');
+	const select = form.querySelector('#jform_translations');
+	const field = select.closest('.control-group') || select;
+
+	jQuery(review).on('localise:reviewReset', () => {
+		review.hidden = true;
+		field.hidden = false;
+		list.replaceChildren();
+	}).on('localise:reviewReady', (_event, keys) => {
+		const changed = new Set(keys);
+		for (const group of select.querySelectorAll('optgroup')) {
+			const options = Array.from(group.querySelectorAll('option')).filter(option => changed.has(option.value));
+			if (!options.length) continue;
+
+			const section = document.createElement('fieldset');
+			section.className = 'mb-3';
+			const heading = document.createElement('legend');
+			heading.className = 'h6';
+			heading.textContent = group.label;
+			section.append(heading);
+
+			for (const option of options) {
+				const row = document.createElement('label');
+				row.className = 'form-check';
+				const checkbox = document.createElement('input');
+				checkbox.type = 'checkbox';
+				checkbox.className = 'form-check-input';
+				checkbox.checked = option.selected;
+				checkbox.addEventListener('change', () => {
+					option.selected = checkbox.checked;
+					select.dispatchEvent(new Event('change', {bubbles: true}));
+				});
+				row.append(checkbox, option.text);
+				section.append(row);
+			}
+			list.append(section);
+		}
+		review.querySelector('[data-review-empty]').hidden = Boolean(list.childElementCount);
+		field.hidden = true;
+		review.hidden = false;
+		review.scrollIntoView({block: 'nearest'});
+	});
+	review.querySelector('[data-review-exit]').addEventListener('click', () => {
+		history.replaceState(null, '', window.location.pathname + window.location.search);
+		jQuery(review).trigger('localise:reviewReset');
+		document.getElementById('localise-check-file-changes').focus();
+	});
+	if (window.location.hash === '#localise-review-files') {
+		jQuery(() => document.getElementById('localise-check-file-changes').click());
+	}
 })();
 </script>

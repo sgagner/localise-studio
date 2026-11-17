@@ -79,9 +79,15 @@ $user = Factory::getUser();
 					<?php if ($status['checkedAt']) : ?>
 						<div class="small"><?php echo Text::sprintf('COM_LOCALISE_EXPORT_STATUS_CHECKED', HTMLHelper::_('date', gmdate('Y-m-d H:i:s', $status['checkedAt']), Text::_('DATE_FORMAT_LC5'))); ?></div>
 					<?php endif; ?>
+					<?php if (($status['origin'] ?? null) === 'manual') : ?>
+						<div class="small"><?php echo Text::_('COM_LOCALISE_EXPORT_CHECK_MANUAL'); ?></div>
+					<?php elseif (($status['origin'] ?? null) === 'automatic') : ?>
+						<div class="small"><?php echo Text::sprintf('COM_LOCALISE_EXPORT_CHECK_AUTOMATIC', $this->escape($status['updatedExtension'])); ?></div>
+					<?php endif; ?>
 					<?php if ($status['status'] === 'CHANGED' && $canEdit && $item->writable) : ?>
-						<a href="<?php echo Route::_('index.php?option=com_localise&task=packagefile.edit&id=' . $item->id . '#localise-preview-export'); ?>">
-							<?php echo Text::_('COM_LOCALISE_PREVIEW_EXPORT'); ?>
+						<?php $hasSource = $status['hasSource']; ?>
+						<a href="<?php echo Route::_('index.php?option=com_localise&task=packagefile.edit&id=' . $item->id . ($hasSource ? '#localise-review-files' : '#localise-preview-export')); ?>">
+							<?php echo Text::_($hasSource ? 'COM_LOCALISE_REVIEW_FILE_CHANGES' : 'COM_LOCALISE_PREVIEW_EXPORT'); ?>
 						</a>
 					<?php endif; ?>
 				<?php endif; ?>

@@ -47,6 +47,14 @@ Factory::getDocument()->addScriptDeclaration("
 	})(jQuery);
 ");
 ?>
+<p class="mb-3">
+	<?php echo Text::_($this->automaticFileCheckActive ? 'COM_LOCALISE_AUTO_CHECK_ACTIVE' : 'COM_LOCALISE_AUTO_CHECK_DISABLED'); ?>
+	<?php if ($this->automaticFileCheckPluginId) : ?>
+		<a class="ms-2" href="<?php echo Route::_('index.php?option=com_plugins&task=plugin.edit&extension_id=' . $this->automaticFileCheckPluginId); ?>">
+			<?php echo Text::_('COM_LOCALISE_AUTO_CHECK_SETTINGS'); ?>
+		</a>
+	<?php endif; ?>
+</p>
 <form action="<?php echo Route::_('index.php?option=com_localise&view=packages');?>" method="post" name="adminForm" id="adminForm">
 	<?php echo $this->loadTemplate('filter'); ?>
 		<table class="table table-striped" id="localiseList">

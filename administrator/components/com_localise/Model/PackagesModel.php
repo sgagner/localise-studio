@@ -19,6 +19,7 @@ use Joomla\CMS\Filter\InputFilter;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\MVC\Model\ListModel;
 use Joomla\CMS\Table\Table;
+use Joomla\Component\Localise\Administrator\Helper\InstalledExtensionLanguages;
 use Joomla\Component\Localise\Administrator\Helper\LocaliseHelper;
 use Joomla\Component\Localise\Administrator\Helper\PackageExportSnapshot;
 use Joomla\Utilities\ArrayHelper;
@@ -232,11 +233,44 @@ class PackagesModel extends ListModel
 			'status' => $check['status'] ?? 'UNCHECKED',
 			'exportedAt' => $snapshot['exportedAt'],
 			'checkedAt' => $check['checkedAt'] ?? 0,
+			'origin' => $check['origin'] ?? null,
+			'updatedExtension' => $check['updatedExtension'] ?? '',
 			'fingerprint' => $fingerprint,
+			'hasSource' => $package->installedsource !== '',
 		];
 	}
 
-	public function checkExportStatuses(array $ids): int
+	public function checkUpdatedExtension(int $extensionId): void
+	{
+		$source = InstalledExtensionLanguages::getUpdatedSource($extensionId);
+		if ($source === null)
+		{
+			return;
+		}
+
+		$ids = [];
+		foreach ([JPATH_ADMINISTRATOR . '/components/com_localise/packages', JPATH_SITE . '/media/com_localise/packages'] as $directory)
+		{
+			if (!is_dir($directory))
+			{
+				continue;
+			}
+
+			foreach (Folder::files($directory, '\.xml$') as $file)
+			{
+				$path = $directory . '/' . $file;
+				$definition = LocaliseHelper::loadPackageDefinition($path);
+				if ($definition && in_array((string) $definition->installedsource, $source['keys'], true))
+				{
+					$ids[] = LocaliseHelper::getFileId($path);
+				}
+			}
+		}
+
+		$this->checkExportStatuses($ids, $source['name']);
+	}
+
+	public function checkExportStatuses(array $ids, ?string $updatedExtension = null): int
 	{
 		$app = Factory::getApplication();
 		$model = new PackagefileModel(['ignore_request' => true]);
@@ -268,7 +302,7 @@ class PackagesModel extends ListModel
 			{
 				$state = $this->buildExportStatus($package, $snapshot);
 				$status = $model->checkExportStatus($package, $snapshot);
-				if (!PackageExportSnapshot::recordCheck($id, $state['fingerprint'], $status))
+				if (!PackageExportSnapshot::recordCheck($id, $state['fingerprint'], $status, $updatedExtension))
 				{
 					$app->enqueueMessage(\Joomla\CMS\Language\Text::sprintf('COM_LOCALISE_EXPORT_CHECK_SAVE_FAILED', $id), 'warning');
 					continue;

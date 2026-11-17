@@ -18,6 +18,7 @@ use Joomla\CMS\MVC\View\GenericDataException;
 use Joomla\CMS\MVC\View\HtmlView as BaseHtmlView;
 use Joomla\CMS\Toolbar\Toolbar;
 use Joomla\CMS\Toolbar\ToolbarHelper;
+use Joomla\Database\DatabaseInterface;
 
 /**
  * Packages View class for the Localise component
@@ -50,11 +51,30 @@ class HtmlView extends BaseHtmlView
 	 */
 	protected $exportStatuses = [];
 
+	protected $automaticFileCheckActive = false;
+
+	protected $automaticFileCheckPluginId = 0;
+
 	public function display($tpl = null)
 	{
 		// Get the data
 		$app                 = Factory::getApplication();
 		$app->getLanguage()->load('com_localise_picker', JPATH_COMPONENT_ADMINISTRATOR);
+		$db = Factory::getContainer()->get(DatabaseInterface::class);
+		$query = $db->getQuery(true)
+			->select($db->quoteName(['extension_id', 'enabled']))
+			->from($db->quoteName('#__extensions'))
+			->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))
+			->where($db->quoteName('folder') . ' = ' . $db->quote('extension'))
+			->where($db->quoteName('element') . ' = ' . $db->quote('localisefilecheck'))
+			->where($db->quoteName('state') . ' >= 0');
+		$plugin = $db->setQuery($query)->loadObject();
+		$user = $app->getIdentity();
+		$this->automaticFileCheckActive = !empty($plugin->enabled);
+		$this->automaticFileCheckPluginId = $plugin
+			&& $user->authorise('core.manage', 'com_plugins')
+			&& $user->authorise('core.edit', 'com_plugins') ? (int) $plugin->extension_id : 0;
+
 		$this->items         = $this->get('Items');
 		$this->exportStatuses = [];
 		foreach ($this->items as $item)

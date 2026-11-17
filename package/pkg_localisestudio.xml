@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="package" method="upgrade">
+	<name>Localise Studio</name>
+	<packagename>localisestudio</packagename>
+	<version>6.0.1</version>
+	<description>Localise Studio and its automatic language package file check plugin.</description>
+	<files folder="packages">
+		<file type="component" id="com_localise">com_localise.zip</file>
+		<file type="plugin" id="localisefilecheck" group="extension">plg_extension_localisefilecheck.zip</file>
+	</files>
+</extension>

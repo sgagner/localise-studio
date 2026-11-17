@@ -108,6 +108,18 @@ class PackageFileModel extends AdminModel
 			return false;
 		}
 
+		$source = (string) $form->getValue('installedsource');
+		$language = (string) $form->getValue('language');
+		$sourceId = $source !== '' && $language !== '' ? InstalledExtensionLanguages::getSourceId($source) : 0;
+
+		if ($sourceId)
+		{
+			$current = InstalledExtensionLanguages::getSuggestions($sourceId, $language);
+			$selected = self::validFileOptions($form->getValue('translations'));
+			$form->setFieldAttribute('translations', 'suggestedfiles', json_encode(array_values(array_unique(array_merge($current, $selected)))));
+			$form->setFieldAttribute('translations', 'missingfiles', json_encode(array_values(array_diff($selected, $current))));
+		}
+
 		return $form;
 	}
 
@@ -956,6 +968,7 @@ class PackageFileModel extends AdminModel
 				'missing' => count($missing),
 				'changed' => $changed === null ? null : count($changed),
 			] : null;
+			$html_output->reviewFiles = $review ? array_values(array_unique(array_merge($new, $missing, $changed ?? []))) : [];
 			$html_output->sourceFiles = ['source' => $source, 'language' => $langtag, 'files' => $current];
 		}
 		elseif ($source !== '')

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="extension" method="upgrade">
+	<name>Localise Studio – Automatic file check</name>
+	<version>1.0.0</version>
+	<description>Checks linked Localise Studio language packages after a source extension update.</description>
+	<namespace path="src">Joomla\Plugin\Extension\Localisefilecheck</namespace>
+	<files>
+		<folder plugin="localisefilecheck">services</folder>
+		<folder>src</folder>
+	</files>
+</extension>

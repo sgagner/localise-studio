@@ -152,6 +152,7 @@ class PackageFileController extends FormController
 				$reply->html            = true;
 				$reply->translations    = $html_output->translations;
 				$reply->fileChanges     = $html_output->fileChanges ?? null;
+				$reply->reviewFiles     = $html_output->reviewFiles ?? [];
 				$reply->sourceFiles     = $html_output->sourceFiles ?? null;
 			}
 			else

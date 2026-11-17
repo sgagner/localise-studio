@@ -35,6 +35,56 @@ final class InstalledExtensionLanguages
 		return 0;
 	}
 
+	public static function getUpdatedSource(int $extensionId): ?array
+	{
+		$extensions = self::getExtensions(true);
+		if (!isset($extensions[$extensionId]))
+		{
+			return null;
+		}
+
+		// Check the updated extension and any children updated with its package.
+		$pending = [$extensions[$extensionId]];
+		$keys = [];
+		$visited = [];
+		while ($pending)
+		{
+			$extension = array_pop($pending);
+			$id = (int) $extension->extension_id;
+			if (isset($visited[$id]))
+			{
+				continue;
+			}
+
+			$visited[$id] = true;
+			$keys[] = self::getSourceKey($extension);
+			if ($extension->type === 'package')
+			{
+				$manifest = self::loadManifest($extension);
+				foreach ($extensions as $child)
+				{
+					if ((int) $child->package_id === $id || self::isDeclaredChild($manifest, $child))
+					{
+						$pending[] = $child;
+					}
+				}
+			}
+		}
+
+		// Updating one member also affects the language package for its parent.
+		$parentId = (int) $extensions[$extensionId]->package_id;
+		while (isset($extensions[$parentId]) && !isset($visited[$parentId]))
+		{
+			$visited[$parentId] = true;
+			$keys[] = self::getSourceKey($extensions[$parentId]);
+			$parentId = (int) $extensions[$parentId]->package_id;
+		}
+
+		$extension = $extensions[$extensionId];
+
+		return ['keys' => $keys, 'name' => trim((string) $extension->name) ?: $extension->element];
+	}
+
 	public static function getSuggestions(int $id, string $language): array
 	{
 		$extensions = self::getExtensions();
@@ -148,11 +198,11 @@ final class InstalledExtensionLanguages
 		return $selected;
 	}
 
-	private static function getExtensions(): array
+	private static function getExtensions(bool $refresh = false): array
 	{
 		static $extensions;
 
-		if ($extensions === null)
+		if ($extensions === null || $refresh)
 		{
 			$db = Factory::getDbo();
 			$query = $db->getQuery(true)

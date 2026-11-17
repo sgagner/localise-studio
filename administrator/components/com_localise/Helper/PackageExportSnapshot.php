@@ -8,12 +8,12 @@ final class PackageExportSnapshot
 {
 	private static function path(int $id): string
 	{
-		return JPATH_COMPONENT_ADMINISTRATOR . '/packages/.export-' . $id . '.json';
+		return JPATH_ADMINISTRATOR . '/components/com_localise/packages/.export-' . $id . '.json';
 	}
 
 	private static function checkPath(int $id): string
 	{
-		return JPATH_COMPONENT_ADMINISTRATOR . '/packages/.export-check-' . $id . '.json';
+		return JPATH_ADMINISTRATOR . '/components/com_localise/packages/.export-check-' . $id . '.json';
 	}
 
 	private static function write(string $path, array $data): bool
@@ -44,12 +44,14 @@ final class PackageExportSnapshot
 		]);
 	}
 
-	public static function recordCheck(int $id, string $fingerprint, string $status): bool
+	public static function recordCheck(int $id, string $fingerprint, string $status, ?string $updatedExtension = null): bool
 	{
 		return self::write(self::checkPath($id), [
 			'fingerprint' => $fingerprint,
 			'status' => $status,
 			'checkedAt' => time(),
+			'origin' => $updatedExtension === null ? 'manual' : 'automatic',
+			'updatedExtension' => $updatedExtension,
 		]);
 	}
 
