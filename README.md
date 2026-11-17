@@ -20,6 +20,10 @@ On a separate Joomla 6.2.0 test installation, we updated J2Commerce from 6.6.5 t
 - The Akeeba Backup language package kept its previous check time.
 - PayPal's `plg_j2commerce_payment_paypal.sys.ini` stayed deselected in the saved J2Commerce language package.
 
+## Releases
+
+See the [changelog](CHANGELOG.md) for changes by version and [GitHub Releases](https://github.com/sgagner/localise-studio/releases) for installation ZIPs.
+
 ## Build the Joomla installation package
 
 Run with Python 3 and Git from the repository root. The build reads the specified commit, so local working-tree edits are excluded.
