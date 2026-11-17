@@ -20,4 +20,5 @@ Copy this template into a new work log entry for each release. Fill in the field
 - **Release commit:** [full commit SHA] (branch `localise-studio`)
 - **GitHub release:** [View the release](RELEASE_URL)
 - **Installation ZIP:** [Download the installation package](ZIP_URL)
+- **Installation ZIP SHA-256:** `[checksum of the ZIP file]`
 ```
