@@ -24,6 +24,8 @@ On a separate Joomla 6.2.0 test installation, we updated J2Commerce from 6.6.5 t
 
 See the [changelog](CHANGELOG.md) for changes by version and [GitHub Releases](https://github.com/sgagner/localise-studio/releases) for installation ZIPs.
 
+See the [verified SHA-256 checksums](RELEASE.md#verified-sha-256-checksums) for the installation ZIPs.
+
 Follow the [release checklist](RELEASE.md) when preparing and publishing a new version.
 
 ## Build the Joomla installation package
