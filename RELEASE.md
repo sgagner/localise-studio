@@ -9,6 +9,7 @@
 - [ ] Publish the verified SHA-256 checksum of the installation ZIP in the GitHub release notes.
 - [ ] Update the [shared SHA-256 table](#verified-sha-256-checksums) for each new release with the verified checksum and links to the GitHub release and installation ZIP.
 - [ ] Link directly to the [shared SHA-256 table](#verified-sha-256-checksums) from the release notes for each new release.
+- [ ] Click the checksum table links in the README and the new release notes. Verify that both jump directly to the shared SHA-256 table on GitHub.
 - [ ] Record the test results, the release commit, and links to the GitHub release and installation ZIP in the work log.
 
 ## Work log entry template
