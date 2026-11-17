@@ -12,7 +12,6 @@ defined('_JEXEC') or die;
 
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
-use Joomla\CMS\Filesystem\Folder;
 use Joomla\CMS\Form\Field\ListField;
 use Joomla\CMS\Form\FormHelper;
 use Joomla\CMS\HTML\HTMLHelper;
@@ -63,7 +62,7 @@ class LanguageField extends ListField
 		$admin     = LanguageHelper::getKnownLanguages(LOCALISEPATH_ADMINISTRATOR);
 		$site      = LanguageHelper::getKnownLanguages(LOCALISEPATH_SITE);
 
-		if (Folder::exists(LOCALISEPATH_INSTALLATION))
+		if (is_dir(LOCALISEPATH_INSTALLATION))
 		{
 			$install = LanguageHelper::getKnownLanguages(LOCALISEPATH_INSTALLATION);
 		}

@@ -15,7 +15,7 @@ require_once JPATH_ADMINISTRATOR . '/components/com_localise/vendor/autoload.php
 
 
 use Joomla\Github\Github;
-use Joomla\CMS\Filesystem\File;
+use Joomla\Filesystem\File;
 use Joomla\CMS\Form\FormHelper;
 use Joomla\CMS\Form\Field\ListField;
 use Joomla\CMS\HTML\HTMLHelper;
@@ -56,7 +56,7 @@ class BranchesField extends ListField
 		$branches      = array();
 		$branches_path = JPATH_ROOT
 				. '/administrator/components/com_localise/customisedref/joomla_branches.txt';
-		if (File::exists($branches_path))
+		if (is_file($branches_path))
 		{
 			file_put_contents($branches_path, '');
 

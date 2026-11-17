@@ -15,7 +15,7 @@ require_once JPATH_ADMINISTRATOR . '/components/com_localise/vendor/autoload.php
 
 
 use Joomla\Github\Github;
-use Joomla\CMS\Filesystem\File;
+use Joomla\Filesystem\File;
 use Joomla\CMS\Form\FormHelper;
 use Joomla\CMS\Form\Field\ListField;
 use Joomla\CMS\HTML\HTMLHelper;
@@ -57,7 +57,7 @@ class ReleasesField extends ListField
 		$versions_path = JPATH_ROOT
 				. '/administrator/components/com_localise/customisedref/stable_joomla_releases.txt';
 
-		if (File::exists($versions_path))
+		if (is_file($versions_path))
 		{
 			// Empty txt file to make sure it contains only stable releases after save.
 			if ($params->get('pre_stable', '0') == '0')

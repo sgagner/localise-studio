@@ -10,7 +10,6 @@ namespace Joomla\Component\Localise\Administrator\Field;
 
 defined('_JEXEC') or die;
 
-use Joomla\CMS\Filesystem\Folder;
 use Joomla\CMS\Form\Field\ListField;
 use Joomla\CMS\Form\FormHelper;
 use Joomla\CMS\HTML\HTMLHelper;
@@ -49,7 +48,7 @@ class ReferencelanguageField extends ListField
 		$admin = LanguageHelper::getKnownLanguages(LOCALISEPATH_ADMINISTRATOR);
 		$site  = LanguageHelper::getKnownLanguages(LOCALISEPATH_SITE);
 
-		if (Folder::exists(LOCALISEPATH_INSTALLATION))
+		if (is_dir(LOCALISEPATH_INSTALLATION))
 		{
 			$installation = LanguageHelper::getKnownLanguages(LOCALISEPATH_INSTALLATION);
 			$languages    = array_intersect_key($admin, $site, $installation);

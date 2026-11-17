@@ -15,9 +15,9 @@ use Joomla\CMS\Access\Rules as JAccessRules;
 use Joomla\CMS\Client\ClientHelper;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
-use Joomla\CMS\Filesystem\File;
-use Joomla\CMS\Filesystem\Folder;
-use Joomla\CMS\Filesystem\Path;
+use Joomla\Filesystem\File;
+use Joomla\Filesystem\Folder;
+use Joomla\Filesystem\Path;
 use Joomla\CMS\Filter\InputFilter;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\MVC\Model\AdminModel;
@@ -224,7 +224,7 @@ class LanguageModel extends AdminModel
 			$language->editor   = Text::sprintf('COM_LOCALISE_TEXT_LANGUAGE_EDITOR', $user->name, $user->username);
 			$language->writable = LocaliseHelper::isWritable($language->path);
 
-			if (File::exists($language->path))
+			if (is_file($language->path))
 			{
 				$xml = simplexml_load_file($language->path);
 
@@ -347,7 +347,7 @@ class LanguageModel extends AdminModel
 
 		$client = $data['client'];
 		$path   = constant('LOCALISEPATH_' . strtoupper($client)) . "/language/$tag/langmetadata.xml";
-		$exists = File::exists($path);
+		$exists = is_file($path);
 		$parts = explode('.', $data['version']);
 		$small_version = implode('.', array($parts[0],$parts[1]));
 
@@ -428,9 +428,9 @@ class LanguageModel extends AdminModel
 			$params = ComponentHelper::getParams('com_localise');
 
 			// Get the file save permission
-			$fileSavePermission = $params->get('filesavepermission', '0444');
+			$fileSavePermission = $params->get('filesavepermission', '0644');
 
-			// Try to make the template file unwriteable.
+			// Apply the configured language file permissions.
 			if (!$ftp['enabled'] && Path::isOwner($path) && !Path::setPermissions($path, $fileSavePermission))
 			{
 				$this->setError(Text::sprintf('COM_LOCALISE_ERROR_LANGUAGE_UNWRITABLE', $path));
@@ -642,13 +642,13 @@ class LanguageModel extends AdminModel
 		{
 			$localisephpPath = constant('LOCALISEPATH_' . strtoupper($client)) . "/language/$tag/$tag.localise.php";
 
-			if (File::exists($localisephpPath))
+			if (is_file($localisephpPath))
 			{
 				rename ($localisephpPath, constant('LOCALISEPATH_' . strtoupper($client)) . "/language/$tag/localise.php");
 			}
 		}
 
-		if (File::exists($localisephpPath))
+		if (is_file($localisephpPath))
 		{
 			$language_data = file_get_contents($localisephpPath);
 			$language_data = str_replace($refclassname, $langclassname, $language_data);

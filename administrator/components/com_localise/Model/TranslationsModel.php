@@ -13,8 +13,7 @@ defined('_JEXEC') or die;
 use Joomla\CMS\Cache\CacheController;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
-use Joomla\CMS\Filesystem\File;
-use Joomla\CMS\Filesystem\Folder;
+use Joomla\Filesystem\Folder;
 use Joomla\CMS\Form\Form;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\MVC\Factory\MVCFactoryInterface;
@@ -187,7 +186,7 @@ class TranslationsModel extends ListModel
 
 				foreach ($extensions as $extension)
 				{
-					if (Folder::exists("$path$extension/language"))
+					if (is_dir("$path$extension/language"))
 					{
 						// Scan extensions folder
 						$tags = Folder::folders("$path$extension/language", $filter_tag);
@@ -197,7 +196,7 @@ class TranslationsModel extends ListModel
 							$file   = "$path$extension/language/$tag/$prefix$extension$suffix.ini"; // Look only for new format
 							$origin = LocaliseHelper::getOrigin("$prefix$extension$suffix", $client);
 
-							if (File::exists($file) && preg_match("/$filter_origin/", $origin))
+							if (is_file($file) && preg_match("/$filter_origin/", $origin))
 							{
 								$translation = new CMSObject(
 									array(
@@ -259,13 +258,13 @@ class TranslationsModel extends ListModel
 				// For all selected clients
 				$path = constant('LOCALISEPATH_' . strtoupper($client)) . '/language';
 
-				if (Folder::exists($path))
+				if (is_dir($path))
 				{
 					$tags = Folder::folders($path, $filter_tag, false, false, array('overrides', '.svn', 'CVS', '.DS_Store', '__MACOSX'));
 
 					foreach ($tags as $tag)
 					{
-						if (File::exists($path . '/' . $tag . '/langmetadata.xml'))
+						if (is_file($path . '/' . $tag . '/langmetadata.xml'))
 						{
 							// For all selected tags
 							$files = Folder::files("$path/$tag", "$filter_search.*\.ini$");
@@ -392,14 +391,14 @@ class TranslationsModel extends ListModel
 		{
 			$client_folder = constant('LOCALISEPATH_' . strtoupper($client)) . '/language';
 
-			if (Folder::exists($client_folder))
+			if (is_dir($client_folder))
 			{
 				// Scan joomla files
 				$tags = Folder::folders($client_folder, $filter_tag, false, false, array('overrides', '.svn', 'CVS', '.DS_Store', '__MACOSX'));
 
 				foreach ($tags as $tag)
 				{
-					if (File::exists($client_folder . '/' . $tag . '/langmetadata.xml'))
+					if (is_file($client_folder . '/' . $tag . '/langmetadata.xml'))
 					{
 						if (array_key_exists("$client|$reftag|joomla", $this->translations))
 						{
@@ -448,7 +447,7 @@ class TranslationsModel extends ListModel
 
 						foreach ($tags as $tag)
 						{
-							if (File::exists($client_folder . '/' . $tag . '/langmetadata.xml'))
+							if (is_file($client_folder . '/' . $tag . '/langmetadata.xml'))
 							{
 								if (array_key_exists("$client|$reftag|$name", $this->translations))
 								{
@@ -489,7 +488,7 @@ class TranslationsModel extends ListModel
 
 							foreach ($tags as $tag)
 							{
-								if (File::exists($client_folder . '/' . $tag . '/langmetadata.xml'))
+								if (is_file($client_folder . '/' . $tag . '/langmetadata.xml'))
 								{
 									if (array_key_exists("$client|$reftag|$name", $this->translations))
 									{
@@ -530,7 +529,7 @@ class TranslationsModel extends ListModel
 
 							foreach ($tags as $tag)
 							{
-								if (File::exists($client_folder . '/' . $tag . '/langmetadata.xml'))
+								if (is_file($client_folder . '/' . $tag . '/langmetadata.xml'))
 								{
 									if (array_key_exists("$client|$reftag|$name", $this->translations))
 									{
@@ -639,7 +638,7 @@ class TranslationsModel extends ListModel
 					{
 						$origin = LocaliseHelper::getOrigin("$prefix$extension$suffix", $client);
 
-						if (File::exists($client_folder . '/' . $tag . '/langmetadata.xml'))
+						if (is_file($client_folder . '/' . $tag . '/langmetadata.xml'))
 						{
 							if (array_key_exists("$client|$tag|$prefix$extension$suffix", $this->translations)
 								&& $this->translations["$client|$tag|$prefix$extension$suffix"]->state != 'unexisting')

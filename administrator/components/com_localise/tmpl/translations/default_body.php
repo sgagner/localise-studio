@@ -12,7 +12,6 @@ defined('_JEXEC') or die;
 use Joomla\Component\Localise\Administrator\Helper\LocaliseHelper;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
-use Joomla\CMS\Filesystem\File;
 use Joomla\CMS\HTML\HTMLHelper;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Router\Route;
@@ -106,7 +105,7 @@ $max_vars = ini_get('max_input_vars');
 			<?php elseif ($item->filename=='override') : ?>
 				<?php echo $item->name; ?>.ini
 			<?php else : ?>
-				<?php if (File::exists($item->path)) : ?>
+				<?php if (is_file($item->path)) : ?>
 					<?php echo HTMLHelper::_('jgrid.action', $i, '', array('tip'=>true, 'inactive_title'=>Text::sprintf('COM_LOCALISE_TOOLTIP_TRANSLATIONS_ERROR', substr($item->path, strlen(JPATH_ROOT)) , implode(', ',$item->error)), 'inactive_class'=>'16-error', 'enabled' => false, 'translate'=>false)); ?>
 				<?php else : ?>
 						<?php echo HTMLHelper::_('jgrid.action', $i, '', array('tip'=>true, 'inactive_title'=>Text::sprintf('COM_LOCALISE_TOOLTIP_TRANSLATIONS_STATE_UNEXISTING', $item->translated, $item->unchanged, $item->total, $item->extra), 'inactive_class'=>'16-unexisting', 'enabled' => false, 'translate'=>false)); ?>
@@ -131,7 +130,7 @@ $max_vars = ini_get('max_input_vars');
 				</a>
 			<?php elseif ($item->state == 'error') : ?>
 				<?php if ($item->error[0] == '0') : ?>
-					<?php if (File::exists($item->path)) : ?>
+					<?php if (is_file($item->path)) : ?>
 						<?php echo HTMLHelper::_('jgrid.action', $i, '', array('tip'=>true, 'inactive_title'=>Text::sprintf('COM_LOCALISE_TOOLTIP_TRANSLATIONS_ERROR_EMPTY_FILE',substr($item->path,strlen(JPATH_ROOT))), 'inactive_class'=>'16-error', 'enabled' => false, 'translate'=>false)); ?>
 					<?php else : ?>
 						<?php echo HTMLHelper::_('jgrid.action', $i, '', array('tip'=>true, 'inactive_title'=>Text::sprintf('COM_LOCALISE_TOOLTIP_TRANSLATIONS_STATE_UNEXISTING', $item->translated, $item->unchanged, $item->total, $item->extra), 'inactive_class'=>'16-unexisting', 'enabled' => false, 'translate'=>false)); ?>

@@ -20,13 +20,12 @@ use Joomla\CMS\Access\Rules as JAccessRules;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Language\LanguageHelper;
 use Joomla\CMS\Form\Form;
-use Joomla\CMS\Filesystem\File;
-use Joomla\CMS\Filesystem\Folder;
+use Joomla\Filesystem\File;
+use Joomla\Filesystem\Folder;
 use Joomla\CMS\Language\Language;
 use Joomla\CMS\Language\Text;
-use Joomla\CMS\Filesystem\Path;
+use Joomla\Filesystem\Path;
 use Joomla\CMS\Client\ClientHelper;
-use Joomla\CMS\Filesystem\Stream;
 use Joomla\CMS\Object\CMSObject;
 
 /**
@@ -89,11 +88,11 @@ class TranslationModel extends AdminModel
 		{
 			$refpath = LocaliseHelper::findTranslationPath('administrator', $ref, $filename);
 
-			if (!File::exists($path))
+			if (!is_file($path))
 			{
 				$path2 = LocaliseHelper::getTranslationPath($client == 'administrator' ? 'site' : 'administrator', $tag, $filename, $storage);
 
-				if (File::exists($path2))
+				if (is_file($path2))
 				{
 					$path = $path2;
 				}
@@ -133,7 +132,7 @@ class TranslationModel extends AdminModel
 		{
 			$path = $this->getState('translation.path');
 
-			if (File::exists($path))
+			if (is_file($path))
 			{
 				$this->contents = file_get_contents($path);
 			}
@@ -179,7 +178,7 @@ class TranslationModel extends AdminModel
 
 			if (!$this->item)
 			{
-				$path = File::exists($this->getState('translation.path'))
+				$path = is_file($this->getState('translation.path'))
 					? $this->getState('translation.path')
 					: $this->getState('translation.refpath');
 
@@ -206,11 +205,11 @@ class TranslationModel extends AdminModel
                     {
                         $filestate = 'notinref';
                     }
-					else if (File::exists($this->getState('translation.refpath')) && File::exists($this->getState('translation.path')))
+					else if (is_file($this->getState('translation.refpath')) && is_file($this->getState('translation.path')))
 					{
 						$filestate = 'inlanguage';
 					}
-					else if (!File::exists($this->getState('translation.refpath')) || File::exists($this->getState('translation.path')))
+					else if (!is_file($this->getState('translation.refpath')) || is_file($this->getState('translation.path')))
 					{
 						$filestate = 'notinref';
 					}
@@ -268,7 +267,7 @@ class TranslationModel extends AdminModel
 										'maincopyright'       => '',
 										'additionalcopyright' => array(),
 										'license'             => '',
-										'exists'              => File::exists($this->getState('translation.path')),
+										'exists'              => is_file($this->getState('translation.path')),
 										'filestate'           => $filestate,
 										'reflang'             => $reftag,
 										'targetlang'          => $tag,
@@ -316,7 +315,7 @@ class TranslationModel extends AdminModel
 										)
 				);
 
-				if (File::exists($path))
+				if (is_file($path))
 				{
 					$devpath    = LocaliseHelper::searchDevpath($gh_client, $refpath);
 					$custompath = LocaliseHelper::searchCustompath($gh_client, $refpath);
@@ -345,13 +344,17 @@ class TranslationModel extends AdminModel
 						$this->item->source = file_get_contents($path);
 					}
 
-					$stream = new Stream;
-					$stream->open($path);
+					$stream = fopen($path, 'rb');
+					if ($stream === false)
+					{
+						throw new \RuntimeException('Unable to open language file: ' . basename($path));
+					}
 
 					$is_emptyFile = empty(file_get_contents($path));
 
 					if ($is_emptyFile)
 					{
+						fclose($stream);
 						// Setting it as an error
 						$this->item->error[] = 0;
 
@@ -379,7 +382,7 @@ class TranslationModel extends AdminModel
 						return $this->item;
 					}
 
-					$begin  = $stream->read(4);
+					$begin  = fread($stream, 4);
 					$bom    = strtolower(bin2hex($begin));
 
 					if ($bom == '0000feff')
@@ -408,7 +411,7 @@ class TranslationModel extends AdminModel
 						}
 					}
 
-					$stream->seek(0);
+					rewind($stream);
 					$continue    = true;
 					$lineNumber  = 0;
 					$has_headers = false;
@@ -416,9 +419,8 @@ class TranslationModel extends AdminModel
 
 					$isTranslationsView = Factory::getApplication()->input->get('view') == 'translations';
 
-					while (!$stream->eof())
+					while (($line = fgets($stream)) !== false)
 					{
-						$line = $stream->gets();
 						$lineNumber++;
 
 						// Adding some control to detect if the file have headers.
@@ -581,13 +583,12 @@ class TranslationModel extends AdminModel
 					// Starting from the begin again if no headers are present.
 					if ($has_headers == false && $is_string == true)
 					{
-						$stream->seek(0);
+						rewind($stream);
 						$lineNumber = 0;
 					}
 
-					while (!$stream->eof())
+					while (($line = fgets($stream)) !== false)
 					{
-						$line = $stream->gets();
 						$lineNumber++;
 						$line = str_replace('\"', '"_QQ_"', $line);
 
@@ -599,13 +600,13 @@ class TranslationModel extends AdminModel
 
 					if ($tag != $reftag)
 					{
-						if (File::exists($custompath))
+						if (is_file($custompath))
 						{
 							$this->item->linescustompath = count(file($custompath));
 						}
 					}
 
-					$stream->close();
+					fclose($stream);
 				}
 
 				$this->item->additionalcopyright = implode("\n", $this->item->additionalcopyright);
@@ -631,7 +632,7 @@ class TranslationModel extends AdminModel
 					$develop_file_path   = "$develop_client_path/$ref_file";
 					$new_keys            = array();
 
-					if (File::exists($develop_file_path) && $allow_develop == 1 && $reftag == 'en-GB')
+					if (is_file($develop_file_path) && $allow_develop == 1 && $reftag == 'en-GB')
 					{
 						$info                  = array();
 						$info['client']        = $gh_client;
@@ -1116,19 +1117,19 @@ class TranslationModel extends AdminModel
 				// Count the number of lines in the ini file to check max_input_vars
 				if ($tag != $reftag)
 				{
-					if (!empty($path) && is_string($path) && File::exists($path))
+					if (!empty($path) && is_string($path) && is_file($path))
 					{
 						$this->item->linespath = count(file($path));
 					}
 
-					if (!empty($refpath) && is_string($refpath) && File::exists($refpath))
+					if (!empty($refpath) && is_string($refpath) && is_file($refpath))
 					{
 						$this->item->linesrefpath = count(file($refpath));
 					}
 
 					if ($this->getState('translation.layout') != 'raw')
 					{
-						if (isset($develop_file_path) && File::exists($develop_file_path))
+						if (isset($develop_file_path) && is_file($develop_file_path))
 						{
 							$this->item->linesdevpath = count(file($develop_file_path));
 						}
@@ -1136,7 +1137,7 @@ class TranslationModel extends AdminModel
 				}
 				else
 				{
-					if (File::exists($path))
+					if (is_file($path))
 					{
 						$this->item->linespath = count(file($path));
 					}
@@ -1435,11 +1436,15 @@ class TranslationModel extends AdminModel
 			$fieldset->addAttribute('name', 'JDEFAULT');
 			$fieldset->addAttribute('label', 'JDEFAULT');
 
-			if (File::exists($refpath))
+			if (is_file($refpath))
 			{
-				$stream = new Stream;
-				$stream->open($refpath);
-				$stream->seek(0);
+
+				$stream = fopen($refpath, 'rb');
+				if ($stream === false)
+				{
+					throw new \RuntimeException('Unable to open language file: ' . basename($refpath));
+				}
+				rewind($stream);
 
 				// $header is used to avoid display at regular edition mode the file headers.
 				// It starts as true due normaly all the core files to translate have the en-GB credits presents at the begin of the file to translate.
@@ -1447,9 +1452,8 @@ class TranslationModel extends AdminModel
 				$lineNumber = 0;
                 $fname      = basename($refpath);
 
-				while (!$stream->eof())
+				while (($line = fgets($stream)) !== false)
 				{
-					$line = $stream->gets();
 					$commented = '';
 					$lineNumber++;
 
@@ -1727,7 +1731,7 @@ class TranslationModel extends AdminModel
 					}
 				}
 
-				$stream->close();
+				fclose($stream);
 
 				$combined_renamed_keys = array();
 
@@ -2076,7 +2080,7 @@ class TranslationModel extends AdminModel
 	 *
 	 * @return bool
 	 */
-	public function saveFile($data)
+	public function saveFile($data): bool
 	{
 		$client        = $this->getState('translation.client');
 		$tag           = $this->getState('translation.tag');
@@ -2085,8 +2089,8 @@ class TranslationModel extends AdminModel
 		$refpath       = $this->getState('translation.refpath');
 		$devpath       = LocaliseHelper::searchDevpath($client, $refpath);
 		$custompath    = LocaliseHelper::searchCustompath($client, $refpath);
-		$exists        = File::exists($path);
-		$refexists     = File::exists($refpath);
+		$exists        = is_file($path);
+		$refexists     = is_file($refpath);
 		$istranslation = $tag != $reftag;
 		$notinref      = array();
 
@@ -2108,7 +2112,7 @@ class TranslationModel extends AdminModel
 
 				// The saved file is not using the core language folders.
 				$path   = $custompath;
-				$exists = File::exists($path);
+				$exists = is_file($path);
 
 				$ref_file         = basename($refpath);
 				$custom_file_path = Folder::makeSafe("$custompath/$ref_file");
@@ -2216,16 +2220,18 @@ class TranslationModel extends AdminModel
 			$contents2 .= "; @note        All ini files need to be saved as UTF-8\n\n";
 
 			$contents = array();
-			$stream   = new Stream;
-			$stream->seek(0);
+
 
 			if ($exists)
 			{
-				$stream->open($path);
-
-				while (!$stream->eof())
+				$stream = fopen($path, 'rb');
+				if ($stream === false)
 				{
-					$line = $stream->gets();
+					throw new \RuntimeException('Unable to open language file: ' . basename($path));
+				}
+
+				while (($line = fgets($stream)) !== false)
+				{
 
 					// Comment lines
 					if (preg_match('/^(;.*)$/', $line, $matches))
@@ -2240,13 +2246,16 @@ class TranslationModel extends AdminModel
 
 				if ($refexists)
 				{
-					$stream->close();
-					$stream->open($refpath);
-					$stream->seek(0);
-
-					while (!$stream->eof())
+					fclose($stream);
+					$stream = fopen($refpath, 'rb');
+					if ($stream === false)
 					{
-						$line = $stream->gets();
+						throw new \RuntimeException('Unable to open language file: ' . basename($refpath));
+					}
+					rewind($stream);
+
+					while (($line = fgets($stream)) !== false)
+					{
 
 						// Comment lines
 						if (!preg_match('/^(;.*)$/', $line, $matches))
@@ -2258,12 +2267,15 @@ class TranslationModel extends AdminModel
 			}
 			else
 			{
-				$stream->open($refpath);
-				$stream->seek(0);
-
-				while (!$stream->eof())
+				$stream = fopen($refpath, 'rb');
+				if ($stream === false)
 				{
-					$line = $stream->gets();
+					throw new \RuntimeException('Unable to open language file: ' . basename($refpath));
+				}
+				rewind($stream);
+
+				while (($line = fgets($stream)) !== false)
+				{
 
 					// Comment lines
 					if (preg_match('/^(;.*)$/', $line, $matches))
@@ -2279,13 +2291,12 @@ class TranslationModel extends AdminModel
 
 			$strings = $data['strings'];
 
-			$stream->seek(0);
+			rewind($stream);
 
-			while (!$stream->eof())
+			while (($line = fgets($stream)) !== false)
 			{
 			// Mounting the language file in this way will help to avoid save files with errors at the content.
 
-				$line = $stream->gets();
 
 				// Blank lines
 				if (preg_match('/^\s*$/', $line))
@@ -2388,7 +2399,7 @@ class TranslationModel extends AdminModel
 				}
 			}
 
-			$stream->close();
+			fclose($stream);
 			$contents = implode($contents);
 			$contents = $contents2 . $contents;
 		}
@@ -2396,15 +2407,31 @@ class TranslationModel extends AdminModel
 		// Make sure EOL is Unix
 		$contents = str_replace(array("\r\n", "\n", "\r"), "\n", $contents);
 
-		$return = File::write($path, $contents);
+		try
+		{
+			$saved = File::write($path, $contents);
+		}
+		catch (\RuntimeException $error)
+		{
+			$this->setError($error->getMessage());
 
-		// Try to make the template file unwriteable.
+			return false;
+		}
+
+		if (!$saved)
+		{
+			$this->setError(Text::sprintf('COM_LOCALISE_ERROR_TRANSLATION_FILESAVE', $path));
+
+			return false;
+		}
+
+		// Apply the configured language file permissions.
 
 		// Get the parameters
 		$coparams = ComponentHelper::getParams('com_localise');
 
 		// Get the file save permission
-		$fsper = $coparams->get('filesavepermission', '0444');
+		$fsper = $coparams->get('filesavepermission', '0644');
 
 		if (!$ftp['enabled'] && Path::isOwner($path) && !Path::setPermissions($path, $fsper))
 		{
@@ -2412,27 +2439,19 @@ class TranslationModel extends AdminModel
 
 			return false;
 		}
-		else
+
+		if ($reftag == 'en-GB' && $tag == 'en-GB' && !empty($custompath))
 		{
-			if (!$return)
-			{
-				$this->setError(Text::sprintf('COM_LOCALISE_ERROR_TRANSLATION_FILESAVE', $path));
+			$params             = ComponentHelper::getParams('com_localise');
+			$customisedref      = $params->get('customisedref', '0');
+			$custom_short_path  = '../media/com_localise/customisedref/github/'
+						. $client
+						. '/'
+						. $customisedref;
 
-				return false;
-			}
-			elseif ($reftag == 'en-GB' && $tag == 'en-GB' && !empty($custompath))
-			{
-				$params             = ComponentHelper::getParams('com_localise');
-				$customisedref      = $params->get('customisedref', '0');
-				$custom_short_path  = '../media/com_localise/customisedref/github/'
-							. $client
-							. '/'
-							. $customisedref;
-
-				Factory::getApplication()->enqueueMessage(
-					Text::_('COM_LOCALISE_NOTICE_CUSTOM_EN_GB_FILE_SAVED') . $custom_short_path,
-					'notice');
-			}
+			Factory::getApplication()->enqueueMessage(
+				Text::_('COM_LOCALISE_NOTICE_CUSTOM_EN_GB_FILE_SAVED') . $custom_short_path,
+				'notice');
 		}
 
 		// Remove the cache
@@ -2447,6 +2466,8 @@ class TranslationModel extends AdminModel
 			$cache    = Factory::getCache('com_localise', '');
 			$cache->remove($keycache);
 		}
+
+		return true;
 	}
 
 	/**
@@ -2471,7 +2492,7 @@ class TranslationModel extends AdminModel
 			$filename   = basename($this->getState('translation.refpath'));
 
 			$data['strings']       = $formData['strings'];
-			$data['falsepositive'] = (array) $formData['falsepositive'];
+			$data['falsepositive'] = (array) ($formData['falsepositive'] ?? []);
 
 			if (!empty($formData['text_changes']))
 			{
@@ -2544,23 +2565,29 @@ class TranslationModel extends AdminModel
 		{
 			$tag = $this->getState('translation.tag');
 
-			if (Folder::exists(JPATH_SITE . "/language/$tag"))
+			if (is_dir(JPATH_SITE . "/language/$tag"))
 			{
 				$this->setState('translation.client', 'site');
 				$this->setState('translation.path', JPATH_SITE . "/language/$tag/lib_joomla.ini");
-				$this->saveFile($data);
+				if (!$this->saveFile($data))
+				{
+					return false;
+				}
 			}
 
-			if (Folder::exists(JPATH_ADMINISTRATOR . "/language/$tag"))
+			if (is_dir(JPATH_ADMINISTRATOR . "/language/$tag"))
 			{
 				$this->setState('translation.client', 'administrator');
 				$this->setState('translation.path', JPATH_ADMINISTRATOR . "/language/$tag/lib_joomla.ini");
-				$this->saveFile($data);
+				if (!$this->saveFile($data))
+				{
+					return false;
+				}
 			}
 		}
-		else
+		elseif (!$this->saveFile($data))
 		{
-			$this->saveFile($data);
+			return false;
 		}
 
 		// Bind the rules.

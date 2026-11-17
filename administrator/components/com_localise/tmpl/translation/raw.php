@@ -91,5 +91,5 @@ $ftpSets   = $this->formftp->getFieldsets();
 		</div>
 	</fieldset>
 	<input type="hidden" name="task" value="" />
-	<?php echo \JHtml::_('form.token'); ?>
+	<?php echo HTMLHelper::_('form.token'); ?>
 </form>

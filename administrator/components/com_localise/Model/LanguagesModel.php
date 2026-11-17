@@ -15,8 +15,7 @@ use Joomla\CMS\MVC\Model\ListModel;
 use Joomla\CMS\MVC\Factory\MVCFactoryInterface;
 use Joomla\CMS\Table\Table;
 use Joomla\CMS\Factory;
-use Joomla\CMS\Filesystem\File;
-use Joomla\CMS\Filesystem\Folder;
+use Joomla\Filesystem\Folder;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Language\Text;
 use Joomla\Component\Localise\Administrator\Helper\LocaliseHelper;
@@ -306,7 +305,7 @@ class LanguagesModel extends ListModel
 
 			foreach ($extensions as $extension)
 			{
-				if (Folder::exists("$path$extension/language"))
+				if (is_dir("$path$extension/language"))
 				{
 					$tags = Folder::folders("$path$extension/language");
 
