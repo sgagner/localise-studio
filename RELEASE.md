@@ -8,6 +8,7 @@
 - [ ] Link directly to the matching version section in [CHANGELOG.md](CHANGELOG.md) from the release notes. Verify the link, download the ZIP from the published release, and confirm that its SHA-256 checksum matches the tested file.
 - [ ] Publish the verified SHA-256 checksum of the installation ZIP in the GitHub release notes.
 - [ ] Update the [shared SHA-256 table](#verified-sha-256-checksums) for each new release with the verified checksum and links to the GitHub release and installation ZIP.
+- [ ] Link directly to the [shared SHA-256 table](https://github.com/sgagner/localise-studio/blob/localise-studio/RELEASE.md#verified-sha-256-checksums) from the release notes for each new release.
 - [ ] Record the test results, the release commit, and links to the GitHub release and installation ZIP in the work log.
 
 ## Work log entry template
