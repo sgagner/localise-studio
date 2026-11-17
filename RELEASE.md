@@ -6,6 +6,7 @@
 - [ ] Calculate the SHA-256 checksum of the tested installation ZIP.
 - [ ] Publish the GitHub release with the tested installation ZIP attached.
 - [ ] Link directly to the matching version section in [CHANGELOG.md](CHANGELOG.md) from the release notes. Verify the link, download the ZIP from the published release, and confirm that its SHA-256 checksum matches the tested file.
+- [ ] Publish the verified SHA-256 checksum of the installation ZIP in the GitHub release notes.
 - [ ] Record the test results, the release commit, and links to the GitHub release and installation ZIP in the work log.
 
 ## Work log entry template
