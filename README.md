@@ -24,6 +24,8 @@ On a separate Joomla 6.2.0 test installation, we updated J2Commerce from 6.6.5 t
 
 See the [changelog](CHANGELOG.md) for changes by version and [GitHub Releases](https://github.com/sgagner/localise-studio/releases) for installation ZIPs.
 
+Follow the [release checklist](RELEASE.md) when preparing and publishing a new version.
+
 ## Build the Joomla installation package
 
 Run with Python 3 and Git from the repository root. The build reads the specified commit, so local working-tree edits are excluded.
